@@ -12,12 +12,16 @@ TODO:
  2. Secondly, I need to implement the server. I guess it will be asynchronous
     server using Beazley's curio. Maybe it's so bad idea, but I want to do some
     weird thing.
-    What about the structure, it is a good question. Maybe I need to use the
-    STUN servers for getting the real ip (for NAT). I think it's the hardest
-    part of the work, if I want to do it nice.
+        What about the structure, it is a good question. Maybe I need to use the
+        STUN servers for getting the real ip (for NAT). I think it's the hardest
+        part of the work, if I want to do it nice.
+        -
+        Also i must provide the good verification system and good security for
+        secret chats.
     ...
  3. When the console version will be done, I need to implement the graphical
     interface using kivy. One more piece of shit for me.
     ...
  4. Also don't forget the testing and configuration files.
-
+    ...
+ 5. BTW, there was the idea to integrate the blockchain system to the messenger
