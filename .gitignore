@@ -106,3 +106,4 @@ venv.bak/
 async
 curio_test
 habr
+/test_blockchain.py
