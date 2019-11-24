@@ -1,0 +1,23 @@
+So, let's get started. Good luck.
+
+TODO:
+ 1. Firstly, I need to implement the sql client for
+    data storing. It must be universal client in order to provide
+    possible changing of database system. So I think, must it be nice
+    architecture with one interface StoreClient and a lot of descendants,
+    for example SQLiteStoreClient.
+    Also, it might be the async class, because, maybe, I'll realise the server
+    using Beazley's curio.
+    ...
+ 2. Secondly, I need to implement the server. I guess it will be asynchronous
+    server using Beazley's curio. Maybe it's so bad idea, but I want to do some
+    weird thing.
+    What about the structure, it is a good question. Maybe I need to use the
+    STUN servers for getting the real ip (for NAT). I think it's the hardest
+    part of the work, if I want to do it nice.
+    ...
+ 3. When the console version will be done, I need to implement the graphical
+    interface using kivy. One more piece of shit for me.
+    ...
+ 4. Also don't forget the testing and configuration files.
+
