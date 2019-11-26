@@ -8,5 +8,7 @@
 # email: davendiy@gmail.com
 
 from src.database.database_clients import *
+import curio
 
-print(SERVER_DATABASE)
+test = SQLiteStoreClient(SERVER_DATABASE)
+curio.run(test.prepare_database())

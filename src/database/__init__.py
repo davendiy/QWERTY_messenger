@@ -21,7 +21,7 @@ Signal server database (server.db):
         Id             # identifier
         Name           # any
         Created        # datetime
-        Creator       <->   Users.Id
+        CreatorID       <->   Users.Id
 
     Table UsersChats
         UserID         >-   Users.Id
@@ -33,7 +33,7 @@ Signal server database (server.db):
         Id            # identifier
         Name          # any
         Created       # datetime
-        Creator       <->   Users
+        CreatorID       <->   Users.Id
 
 
     Table UsersChannels
