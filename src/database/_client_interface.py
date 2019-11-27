@@ -11,7 +11,19 @@ from abc import ABC, abstractmethod
 from ..app_constants import *
 
 
+class BadStorageParamException(Exception):
+    pass
+
+
 class StorageClientInterface(ABC):
+
+    @abstractmethod
+    async def start(self) -> bool:
+        pass
+
+    @abstractmethod
+    async def end(self):
+        pass
 
     # ============================= user =======================================
     @abstractmethod
@@ -19,11 +31,11 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
-    async def get_user_info(self, name: str) -> dict:
+    async def get_user_info(self, name: str) -> tuple:
         pass
 
     @abstractmethod
-    async def delete_user(self, name=''):
+    async def delete_user(self, name: str):
         pass
 
     @abstractmethod
