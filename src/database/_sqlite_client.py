@@ -331,6 +331,23 @@ class SqliteStorageClient(StorageClientInterface):
         params = (name, )
         await self._work_queue.put((query, params))
 
+    @_check_connected
+    async def _get_ids(self, c_name, user_name, destination=CHAT):
+        query = "SELECT Users.Id FROM Users WHERE Users.Name=?"
+        await self._do_read_query(query, (user_name,))
+        user_id = self._curs.fetchone()
+
+        if destination == CHAT:
+            query = "SELECT Chats.Id FROM Chats WHERE Name=?"
+            await self._do_read_query(query, (c_name,))
+            c_id = self._curs.fetchone()
+        else:
+            query = "SELECT Channels.Id FROM Channels WHERE Name=?"
+            await self._do_read_query(query, (c_name,))
+            c_id = self._curs.fetchone()
+        return user_id, c_id
+
+    @_check_connected
     async def add_user(self, c_name: str, user_name: str,
                        permission=MEMBER,
                        destination=CHAT):
@@ -340,17 +357,10 @@ class SqliteStorageClient(StorageClientInterface):
         assert permission in POSSIBLE_PERMISSIONS[destination], \
             f"Bad permission {permission}"
 
-        query = "SELECT Users.Id FROM Users WHERE Users.Name=?"
-        await self._do_read_query(query, (user_name,))
-        user_id = self._curs.fetchone()
-
-        if not user_id:
-            raise BadStorageParamException(f"There is no user with name {user_id}.")
-
+        # FIXME
+        #   Check if it works fast, maybe it should be replaced with
+        #   one big request INSERT that checks inside all the possible problems
         if destination == CHAT:
-            query = "SELECT Chats.Id FROM Chats WHERE Name=?"
-            await self._do_read_query(query, (c_name,))
-            c_id = self._curs.fetchone()
             query = '''
             -- If there has already been such user in such chat - ignore
             INSERT OR IGNORE INTO UsersChats (UID, CID, Permission) VALUES ( 
@@ -360,9 +370,6 @@ class SqliteStorageClient(StorageClientInterface):
              ) 
             '''
         else:
-            query = "SELECT Channels.Id FROM Channels WHERE Name=?"
-            await self._do_read_query(query, (c_name,))
-            c_id = self._curs.fetchone()
             query = '''
             -- If there has already been such user in such channel - ignore 
             INSERT OR IGNORE INTO UsersChats (UID, CID, Permission) VALUES (
@@ -372,8 +379,82 @@ class SqliteStorageClient(StorageClientInterface):
             )
             '''
 
+        user_id, c_id = await self._get_ids(c_name, user_name, destination)
+
+        if not user_id:
+            raise BadStorageParamException(f"There is no user with name {user_id}.")
+
         if not c_id:
             raise BadStorageParamException(f"There is no channel/chat with name {c_name}.")
 
-        await self._work_queue.put((query, (user_id[0], c_id[0], permission)))
+        # FIXME also check later what does the curs.fetchone() return.
+        #   Does it always return only tuple?
+        await self._work_queue.put( (query, (user_id[0], c_id[0], permission)) )
 
+    @_check_connected
+    async def change_user_permission(self, c_name: str, user_name: str,
+                                     permission,
+                                     destination=CHAT):
+        assert destination in POSSIBLE_PERMISSIONS, \
+            f"Bad destination {destination}"
+        assert permission in POSSIBLE_PERMISSIONS[destination], \
+            f"Bad permission {permission}"
+
+        if destination == CHAT:
+            query = "UPDATE OR IGNORE UsersChats SET Permission=? " \
+                    "WHERE UID=? AND CID=?"
+        else:
+            query = "UPDATE OR IGNORE UsersChannels SET Permission=? " \
+                    "WHERE UID=? AND CID=?"
+
+        user_id, c_id = await self._get_ids(c_name, user_name, destination)
+        if not user_id:
+            raise BadStorageParamException(f"There is no user with name {user_id}.")
+        if not c_id:
+            raise BadStorageParamException(f"There is no channel/chat with name {c_name}.")
+        await self._work_queue.put( (query, (permission, user_id, c_id)) )
+
+    @_check_connected
+    async def remove_user(self, c_name: str, user_name: str,
+                          destination=CHAT):
+        assert destination in POSSIBLE_PERMISSIONS, \
+            f"Bad destination {destination}"
+
+        if destination == CHAT:
+            query = "DELETE FROM UsersChats WHERE UID=? AND CID=?"
+        else:
+            query = "DELETE FROM UsersChannels WHERE UID=? AND CID=?"
+
+        user_id, c_id = await self._get_ids(c_name, user_name, destination)
+        if not user_id:
+            raise BadStorageParamException(f"There is no user with name {user_id}.")
+        if not c_id:
+            raise BadStorageParamException(f"There is no channel/chat with name {c_name}.")
+        await self._work_queue.put( (query, (user_id[0], c_id[0])) )
+
+    @_check_connected
+    async def find(self, pattern: str, destination=CHAT, use_regex=False) -> list:
+        if use_regex:
+            raise NotImplementedError("Find using regex hasn't still being implemented.")
+        if not pattern:
+            return []
+        if destination == CHAT:
+            query = "SELECT Name, CreatorID, Created FROM Chats " \
+                    "WHERE Name LIKE ?"
+        else:
+            query = "SELECT Name, CreatorID, Created FROM Channels " \
+                    "WHERE Name Like ?"
+
+        await self._do_read_query(query, (pattern,))
+        return self._curs.fetchall()
+
+    @_check_connected
+    async def find_users(self, pattern: str, use_regex=False) -> list:
+        if use_regex:
+            raise NotImplementedError("Find using regex hasn't still being implemented.")
+        if not pattern:
+            return []
+
+        query = "SELECT Name FROM Users WHERE NAME LIKE ?"
+        await self._do_read_query(query, (pattern,))
+        return self._curs.fetchall()

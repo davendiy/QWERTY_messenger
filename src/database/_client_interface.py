@@ -50,7 +50,7 @@ class StorageClientInterface(ABC):
 
     @abstractmethod
     async def change_user_permission(self, c_name: str, user_name: str,
-                                     permission=MEMBER,
+                                     permission,
                                      destination=CHAT):
         pass
 
