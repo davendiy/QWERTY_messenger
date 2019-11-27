@@ -1,100 +1,108 @@
 #!/usr/bin/env python3
 # -*-encoding: utf-8-*-
 
-# created: 25.11.2019
+# created: 27.11.2019
 # by David Zashkolny
 # 3 course, comp math
 # Taras Shevchenko National University of Kyiv
 # email: davendiy@gmail.com
 
-from ..config_reader import config_read
-from ..constants import *
+"""
+Database package.
+
+Signal server database (server.db):
+
+    Table Users
+        Id             # identifier
+        Name           # any
+        PasswordHash   # bcrypt hash
+
+    Table Chats
+        Id             # identifier
+        Name           # any
+        Created        # datetime
+        CreatorID       <->   Users.Id
+
+    Table UsersChats
+        UserID         >-   Users.Id
+        ChatID         >-   Chats.Id
+        Permission     # creator, admin, user
+        Status         # banned, muted etc..
+
+    Table Channels
+        Id            # identifier
+        Name          # any
+        Created       # datetime
+        CreatorID       <->   Users.Id
 
 
-CHANNELS = "Channels"
-CHATS = "Chats"
+    Table UsersChannels
+        UserID       >-   Users.Id
+        ChannelID    >-   Channels.Id
+        Permission
+        Status
 
-USERS_CHATS = 'UsersChats'
-USERS_CHANNELS = 'UsersChannels'
+    Table ChannelMessages
+        Id           # identifier
+        ChannelID    >- Chats.Id
+        Created      # datetime
+        Status       # edited, deleted
+        Type         # image, video, document, plain, voice ...
+        Content      # text or ref to necessary file
 
-PRIVATE = 1
-PUBLIC = 0
+
+    Table ChatMessages
+        Id           # identifier
+        ChatID       >- Chats.Id
+        AuthorID     >- Users.Id
+        Created      # datetime
+        Status       # edited, deleted
+        Type         # image, video, document, plain, voice ...
+        Content      # text or ref to necessary file
 
 
-SERVER_DATABASE = os.path.realpath('../store/Server.db')
+User's private database (cryptotext):
 
-USERS_TABLE_FIELDS = (
-    "Id",
-    "Name",
-    "PasswordHash"
-)
-CHATS_TABLE_FIELDS = (
-    "Id",
-    "Name",
-    "Created",
-    "CreatorID",
-)
-USERS_CHATS_TABLE_FIELDS = (
-    "UID",
-    "CID",
-    "Permission",
-    "Status"
-)
-CHANNELS_TABLE_FIELDS = (
-    "Id",
-    "Name",
-    "Created",
-    "CreatorID",
-)
-USERS_CHANNELS_TABLE_FIELDS = (
-    "UID",
-    "CID",
-    "Permission",
-    "Status"
-)
-CHANNEL_MESSAGES_TABLE_FIELDS = (
-    "Id",
-    "CID",
-    "Created",
-    "Status",
-    "Type",
-    "Content",
-)
-CHAT_MESSAGES_TABLE_FIELDS = (
-    "Id",
-    "CID",
-    "AuthorID",
-    "Created",
-    "Status",
-    "Type",
-    "Contents",
-)
-PRIVATE_CHATS_TABLE_FIELDS = (
-    "Id",
-    "InterlocutorID",
-    "Created",
-    "Key",
-)
+    Table PrivateChats
+        Id             # identifier
+        Interlocutor  <->    Users.Id
+        Created        # datetime
+        Key            # key of conversation   (AES)
 
-config_read(DATABASE_CONFIG_FILE, 'database', globals())
+    Table ChatMessages
+        Id             # identifier
+        ChatID        <-> Chats.ID
+        Created        # datetime
+        Author        <-> Users.Id
+        Status         # edited, deleted
+        Type           # image, video, document, plain, voice
+        Content        # text or ref to necessary file
+"""
 
+from ._client_interface import *
+from ..logger import logger
+
+import sqlite3
+from curio import UniversalEvent, run_in_thread
+from curio import UniversalQueue
+from functools import partial
 
 PREPARE_DATABASE_QUERY = '''
 
 CREATE TABLE IF NOT EXISTS Users (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,   
-    Name TEXT NOT NULL,
+    Name TEXT NOT NULL UNIQUE,
     PasswordHash blob
 );
 
-PRAGMA FOREIGN_KEYS=on;     -- Enable in order provide the data integrity
+PRAGMA FOREIGN_KEYS=on;     -- Enable in order to provide the data integrity
 
 CREATE TABLE IF NOT EXISTS Chats (
     Id  INTEGER PRIMARY KEY AUTOINCREMENT,
-    Name  TEXT NOT NULL,
+    Name  TEXT NOT NULL UNIQUE ,
     Created TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL, 
     CreatorID INTEGER NOT NULL,
-    
+
     -- if we delete some user from Users all the chats created 
     -- by that user will be deleted (due to ON DELETE CASCADE)
     FOREIGN KEY (CreatorID) REFERENCES Users(Id) ON DELETE CASCADE
@@ -102,10 +110,10 @@ CREATE TABLE IF NOT EXISTS Chats (
 
 CREATE TABLE IF NOT EXISTS Channels (
     Id  INTEGER PRIMARY KEY AUTOINCREMENT,
-    Name   TEXT NOT NULL,
+    Name   TEXT NOT NULL UNIQUE,
     Created   TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CreatorID   INTEGER NOT NULL,
-    
+
     -- if we delete some user from Users all the chats created 
     -- by that user will be deleted (due to ON DELETE CASCADE)
     FOREIGN KEY (CreatorID) REFERENCES Users(Id) ON DELETE CASCADE
@@ -116,12 +124,12 @@ CREATE TABLE IF NOT EXISTS UsersChats (
     CID INTEGER NOT NULL,
     Permission  INTEGER DEFAULT 1 NOT NULL,
     Status      INTEGER DEFAULT 0 NOT NULL,
-    
+
     -- if we delete some user from Users he will be deleted from 
     -- all the chats where he had being before
     -- (due to ON DELETE CASCADE) 
     FOREIGN KEY (UID) REFERENCES Users(Id) ON DELETE CASCADE,
-    
+
     -- if we delete some chat from Chats all the records about that 
     -- chat will be deleted (due to ON DELETE CASCADE)
     FOREIGN KEY (CID) REFERENCES Chats(Id) ON DELETE CASCADE
@@ -132,12 +140,12 @@ CREATE TABLE IF NOT EXISTS UsersChannels (
     CID INTEGER NOT NULL,
     Permission INTEGER DEFAULT 1 NOT NULL,
     Status     INTEGER DEFAULT 0 NOT NULL,
-    
+
     -- if we delete some user from Users he will be deleted from 
     -- all the channels where he had being before
     -- (due to ON DELETE CASCADE) 
     FOREIGN KEY (UID) REFERENCES Users(Id) ON DELETE CASCADE,
-    
+
     -- if we delete some channel from Channels all the records about that 
     -- channel will be deleted (due to ON DELETE CASCADE)
     FOREIGN KEY (CID) REFERENCES Channels(Id) ON DELETE CASCADE
@@ -151,11 +159,11 @@ CREATE TABLE IF NOT EXISTS ChannelMessages (
     Status   INTEGER DEFAULT 0 NOT NULL,
     Type     TEXT NOT NULL,
     Content  TEXT,
-    
+
     -- if we delete some channel from Channels all the messages from 
     -- that channel will be deleted (due to ON DELETE CASCADE)
     FOREIGN KEY (CID) REFERENCES Channels(Id) ON DELETE CASCADE,
-    
+
     -- if we delete some user from Users all the messages he had written will 
     -- be deleted from all the channels he had being before (due to ON DELETE CASCADE) 
     FOREIGN KEY (AuthorID) REFERENCES Users(Id) ON DELETE CASCADE 
@@ -169,13 +177,33 @@ CREATE TABLE IF NOT EXISTS ChatMessages (
     Status   INTEGER DEFAULT 0 NOT NULL,
     Type     TEXT NOT NULL,
     Content  TEXT,
-    
+
     -- if we delete some chat from Chats all the messages from that chat
     -- will be deleted (due to ON DELETE CASCADE)
     FOREIGN KEY (CID) REFERENCES Chats(Id) ON DELETE CASCADE,
-    
+
     -- if we delete some user from Users all the messages he had written will be 
     -- deleted from all the chats he had being before (due to ON DELETED CASCADE)
     FOREIGN KEY (AuthorID) REFERENCES Users(Id) ON DELETE CASCADE
 );
 '''
+
+STOP_WORKING = '############# STOP_WORKING ##############'
+
+
+async def worker(filedb, queue: UniversalQueue):
+    conn = sqlite3.connect(filedb, check_same_thread=False)
+    curs = conn.cursor()
+    while True:
+        query, params = await queue.get()
+        if query == STOP_WORKING:
+            break
+        logger.info(f'[*] Executing query {query} with params {params}...')
+        await run_in_thread(partial(curs.execute, query, params))
+        conn.commit()
+
+
+class SqliteStorageClient(StorageClientInterface):
+
+    def __init__(self, filedb: str):
+        pass

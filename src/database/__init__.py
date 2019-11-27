@@ -8,73 +8,53 @@
 # email: davendiy@gmail.com
 
 """
-Database package.
-
-Signal server database (server.db):
-
-    Table Users
-        Id             # identifier
-        Name           # any
-        PasswordHash   # bcrypt hash
-
-    Table Chats
-        Id             # identifier
-        Name           # any
-        Created        # datetime
-        CreatorID       <->   Users.Id
-
-    Table UsersChats
-        UserID         >-   Users.Id
-        ChatID         >-   Chats.Id
-        Permission     # creator, admin, user
-        Status         # banned, muted etc..
-
-    Table Channels
-        Id            # identifier
-        Name          # any
-        Created       # datetime
-        CreatorID       <->   Users.Id
+TODO
+    - Complete all the interface StoreClient
+    - Implement descendant SQLiteStoreClient
+    - Add config constants
+    - Add documentation
+    - Create unit tests
 
 
-    Table UsersChannels
-        UserID       >-   Users.Id
-        ChannelID    >-   Channels.Id
-        Permission
-        Status
+Required functionality:
+    ############################# user #########################################
+TODO
+    1. Create new user (name should be identical)
+    2. Delete user (and delete all his history)
+    3. Modify user (change Name, password)
 
-    Table ChannelMessages
-        Id           # identifier
-        ChannelID    >- Chats.Id
-        Created      # datetime
-        Status       # edited, deleted
-        Type         # image, video, document, plain, voice ...
-        Content      # text or ref to necessary file
+    ############################# chat #########################################
+TODO
+    1. Create new chat by user (creator always only 1, name should be unique)
+    2. Add user to chat
+    3. Modify user's permissions in chat: admin, member (by creator only)
+    4. Remove user (by himself or admin/creator)
+    5. Modify user's status in chat (banned, norm)
+    6. Find chat by name
+    7. Get all the members of chat
 
+    ########################### channel ########################################
+TODO
+    1. Create new channel by user (creator always only 1)
+    2. Add user to channel
+    3. Modify user's permissions in channel: moderator, member (by creator only)
+    4. Remove user (by himself or creator)
+    5. Find channel by name
 
-    Table ChatMessages
-        Id           # identifier
-        ChatID       >- Chats.Id
-        AuthorID     >- Users.Id
-        Created      # datetime
-        Status       # edited, deleted
-        Type         # image, video, document, plain, voice ...
-        Content      # text or ref to necessary file
+    ######################## chat messages #####################################
+TODO
+    0. Get all the messages from chat (by anyone)
+    1. Write new message (by norm users only)
+    2. Delete message (by author, admin or creator)
+    3. Edit message (by author only)
 
-
-User's private database (cryptotext):
-
-    Table PrivateChats
-        Id             # identifier
-        Interlocutor  <->    Users.Id
-        Created        # datetime
-        Key            # key of conversation   (AES)
-
-    Table ChatMessages
-        Id             # identifier
-        ChatID        <-> Chats.ID
-        Created        # datetime
-        Author        <-> Users.Id
-        Status         # edited, deleted
-        Type           # image, video, document, plain, voice
-        Content        # text or ref to necessary file
+    ###################### channel messages ####################################
+TODO
+    0. Get all the publications from channel (by anyone)
+    1. Write new publication (by moderator/creator)
+    2. Delete publication (by moderator/creator)
+    3.
 """
+
+from ._sqlite_client import *
+from ._client_interface import *
