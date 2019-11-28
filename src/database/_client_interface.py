@@ -15,15 +15,26 @@ class BadStorageParamException(Exception):
     pass
 
 
+class StorageConnectionError(Exception):
+    pass
+
+
 class StorageClientInterface(ABC):
 
     @abstractmethod
-    async def start(self) -> bool:
+    async def start(self):
         pass
 
     @abstractmethod
     async def end(self):
         pass
+
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.end()
 
     # ============================= user =======================================
     @abstractmethod
@@ -72,13 +83,14 @@ class StorageClientInterface(ABC):
     async def create_chat(self, creator: str, chat_name: str, members: list):
         pass
 
-    @abstractmethod
-    async def set_ban_user(self, chat_name: str, user_name: str, ban=NORM):
-        pass
-
-    @abstractmethod
-    async def is_banned(self, chat_name, user_name) -> bool:
-        pass
+    # TODO implement
+    # @abstractmethod
+    # async def set_ban_user(self, chat_name: str, user_name: str, ban=NORM):
+    #     pass
+    #
+    # @abstractmethod
+    # async def is_banned(self, chat_name, user_name) -> bool:
+    #     pass
 
     @abstractmethod
     async def get_members(self, chat_name: str) -> list:
