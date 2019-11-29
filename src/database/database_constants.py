@@ -7,6 +7,22 @@
 # Taras Shevchenko National University of Kyiv
 # email: davendiy@gmail.com
 
+TEXT = 0
+IMAGE = 1
+AUDIO = 2
+VIDEO = 3
+DOCUMENT = 4
+
+MESSAGE_TYPES = {
+    TEXT,
+    IMAGE,
+    AUDIO,
+    VIDEO,
+    DOCUMENT,
+}
+
+
+
 CHANNELS = "Channels"
 CHATS = "Chats"
 

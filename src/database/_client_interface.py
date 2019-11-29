@@ -9,6 +9,7 @@
 
 from abc import ABC, abstractmethod
 from ..app_constants import *
+from .database_constants import *
 
 
 class BadStorageParamException(Exception):
@@ -19,16 +20,27 @@ class StorageConnectionError(Exception):
     pass
 
 
+class YouRBannedWriteError(Exception):
+    pass
+
+
 class StorageClientInterface(ABC):
 
     @abstractmethod
     async def start(self):
+        """ Prepare client for running in main event-loop.
+        It used in __aenter__ too.
+        """
         pass
 
     @abstractmethod
     async def end(self):
+        """ Close of all the connections between client and database.
+        It used in __aexit__ too.
+        """
         pass
 
+    # methods for async with
     async def __aenter__(self):
         await self.start()
         return self
@@ -83,14 +95,13 @@ class StorageClientInterface(ABC):
     async def create_chat(self, creator: str, chat_name: str, members: list):
         pass
 
-    # TODO implement
-    # @abstractmethod
-    # async def set_ban_user(self, chat_name: str, user_name: str, ban=NORM):
-    #     pass
-    #
-    # @abstractmethod
-    # async def is_banned(self, chat_name, user_name) -> bool:
-    #     pass
+    @abstractmethod
+    async def set_ban_user(self, chat_name: str, user_name: str, ban=NORM):
+        pass
+
+    @abstractmethod
+    async def is_banned(self, chat, user, use_id=False) -> bool:
+        pass
 
     @abstractmethod
     async def get_members(self, chat_name: str) -> list:
@@ -109,9 +120,11 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
-    async def add_messages(self, chat_name: str, messages: list):
+    async def add_message(self, chat_name: str, author, content,
+                          message_type=TEXT):
         pass
 
+    @abstractmethod
     async def find_messages(self, chat_name: str, pattern: str,
                             use_regex=False) -> list:
         pass

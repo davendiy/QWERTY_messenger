@@ -79,6 +79,7 @@ User's private database (cryptotext):
 
 from ._client_interface import *
 from ..logger import logger
+from .database_constants import *
 
 import sqlite3
 import curio
@@ -180,7 +181,7 @@ CREATE TABLE IF NOT EXISTS ChannelMessages (
     Created  TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     Status   INTEGER DEFAULT 0 NOT NULL,
     Type     TEXT NOT NULL,
-    Content  TEXT,
+    Content  TEXT NOT NULL,
 
     -- if we delete some channel from Channels all the messages from 
     -- that channel will be deleted (due to ON DELETE CASCADE)
@@ -193,8 +194,8 @@ CREATE TABLE IF NOT EXISTS ChatMessages (
     AuthorID INTEGER NOT NULL,
     Created  TEXT DEFAULT CURRENT_TIMESTAMP,
     Status   INTEGER DEFAULT 0 NOT NULL,
-    Type     TEXT NOT NULL,
-    Content  TEXT,
+    Type     INTEGER DEFAULT {TEXT} NOT NULL,
+    Content  TEXT NOT NULL,
 
     -- if we delete some chat from Chats all the messages from that chat
     -- will be deleted (due to ON DELETE CASCADE)
@@ -235,23 +236,41 @@ class NotWorkingException(Exception):
 
 
 class AsyncWorker:
+    """ Worker that handlers all the queries that make changes in database.
+    It should be singleton in order to provide data integrity.
+
+    All the queries are sent via UniversalQueue from AsyncWorker.get_queue() in
+    such format:  tuple(query: str, params: tuple)
+    """
+
     # TODO
     #  maybe there is some sense for making the dictionary from this set
     #  and implement creating only one example of this class via method __new__
     ALREADY_WORKING = set()
 
     def __init__(self, filedb):
+        """ Create new asynchronous worker for the given database.
+
+        :param filedb: path to database
+        :raise SingletonException: if it tries to create new worker for database,
+                                   that has already had worker started on.
+        """
         if filedb in AsyncWorker.ALREADY_WORKING:
             raise SingletonException(f"Can't create 2 workers for {filedb}")
         self._filename = filedb
-        self._queue = curio.UniversalQueue()
+        self._queue = curio.UniversalQueue()   # queue that
         self._conn = None
         self._curs = None
 
     # TODO try make this method to do more queries at one commit
     # TODO add benchmark for testing
     async def start(self):
+        """ Connect and start the mainloop.
+        """
         AsyncWorker.ALREADY_WORKING.add(self._filename)
+
+        # check_same_thread=False because we provide access to the database
+        # from different threads
         self._conn = sqlite3.connect(self._filename, check_same_thread=False)
         curs = self._conn.cursor()
         logger.info(f"[*] Worker for {self._filename} started to work...")
@@ -262,11 +281,14 @@ class AsyncWorker:
                 if query == STOP_WORKING:
                     break
                 logger.info(f'[*] Executing query {query} with params {params}...')
+
+                # curio provides tool for asynchronous launching of synchronous
+                # function
                 await curio.run_in_thread(partial(curs.execute, query, params))
                 self._conn.commit()
             except curio.CancelledError:
                 logger.info(f"[*] Worker for {self._filename} canceled. Exiting...")
-                self._conn.rollback()  # it could be not finished changing
+                self._conn.rollback()   # it could be not finished changing
                 self._conn.close()
                 break
             except Exception as e:
@@ -274,22 +296,35 @@ class AsyncWorker:
                 self._conn.rollback()
 
     def get_queue(self):
+        """ Get queue for sending the queries.
+
+        You should put the query in such format: tuple(query: str, params: tuple)
+        :return: UniversalQueue that could be used asynchronously and in
+                 a classical way
+        """
         return self._queue
 
 
 def _check_connected(async_method):
+    """ Decorator for asynchronous methods that checks
+    if the method start was used before.
+    """
     async def _async_method(self, *args, **kwargs):
         if self._conn is None:
-            raise NotWorkingException(f"Worker for {self._filename} isn't started.")
+            raise NotWorkingException(f"Worker for {self._filename} isn't started. Use the SqliteStorageClient.start()")
         return await async_method(self, *args, **kwargs)
 
     return _async_method
 
 
 class SqliteStorageClient(StorageClientInterface):
+    """ Implementation of StorageClientInterface on sqlite.
+    """
 
     def __init__(self, filedb: str):
         self._filename = filedb
+
+        # initialisation of worker, but not launching
         self._worker = AsyncWorker(filedb)
         self._work_queue = self._worker.get_queue()
         self._worker_task = None
@@ -298,10 +333,17 @@ class SqliteStorageClient(StorageClientInterface):
 
     # FIXME be careful, I don't know if it's right to make only one connection
     async def start(self):
+        """ Prepare the client for work.
+
+        It connects to the database, gets cursor, launches the worker and
+        executes script for creating all the tables, indexes and triggers.
+        """
         try:
             self._conn = sqlite3.connect(self._filename, check_same_thread=False)
             self._curs = self._conn.cursor()
             self._curs.executescript(PREPARE_DATABASE_QUERY)
+
+            # launch worker in background
             self._worker_task = await curio.spawn(self._worker.start)
         except Exception as e:
             logger.error(f"Exception during creation of new SqliteStorageClient: {e}")
@@ -309,6 +351,9 @@ class SqliteStorageClient(StorageClientInterface):
 
     @_check_connected
     async def end(self):
+        """ Closes the connection between client and database,
+        interrupts the worker.
+        """
         if self._conn is not None:
             await self._worker_task.cancel()
             self._conn.close()
@@ -316,20 +361,26 @@ class SqliteStorageClient(StorageClientInterface):
             self._curs = None
 
     @_check_connected
-    async def _do_read_query(self, query, params=()):
+    async def _do_read_query(self, query: str, params=()):
+        """ Makes the query that doesn't change the database.
+        """
         logger.info(f"[*] Run in thread read query {query} with params {params}.")
         await curio.run_in_thread(partial(self._curs.execute, query, params))
 
     # ============================= user =======================================
     @_check_connected
-    async def _get_user_id(self, user_name):
+    async def _get_user_id(self, user_name: str):
+        """ Get user's id from Users by Name.
+        """
         query = "SELECT Users.Id FROM Users WHERE Users.Name=?"
         await self._do_read_query(query, (user_name,))
         user_id = self._curs.fetchone()
         return user_id if not user_id else user_id[0]
 
     @_check_connected
-    async def _get_c_id(self, c_name, destination=CHAT):
+    async def _get_c_id(self, c_name: str, destination=CHAT):
+        """ Get chat's or channel's id from Chat/Channel respectively by name.
+        """
         if destination == CHAT:
             query = "SELECT Chats.Id FROM Chats WHERE Name=?"
             await self._do_read_query(query, (c_name,))
@@ -342,6 +393,11 @@ class SqliteStorageClient(StorageClientInterface):
 
     @_check_connected
     async def new_user(self, name: str, password: bytearray):
+        """ Creates new user with given password (hash).
+
+        :raises BadStorageParamException: if the user with given
+                                          name already exists
+        """
         logger.info(f"[*] Try to create new user {name} with password {password}")
 
         if await self._get_user_id(name):
@@ -353,7 +409,15 @@ class SqliteStorageClient(StorageClientInterface):
         await self._work_queue.put((query, params))
 
     @_check_connected
+    async def modify_user(self, name, new_name: str, new_password: bytes):
+        raise NotImplementedError()
+
+    @_check_connected
     async def get_user_info(self, name: str) -> tuple:
+        """ Captures all the information of user from the Users by name.
+
+        It could be Name, Image, email and so on later.
+        """
         query = "SELECT * FROM Users WHERE Name=?"
         await self._do_read_query(query, (name,))
         res = self._curs.fetchone()
@@ -362,7 +426,12 @@ class SqliteStorageClient(StorageClientInterface):
 
     @_check_connected
     async def delete_user(self, name: str):
-        if not self._get_user_id(name):
+        """ Delete user with given name from the database.
+
+        :raises BadStorageParamException: if the user with given
+                                          name doesn't exist
+        """
+        if not (await self._get_user_id(name)):
             raise BadStorageParamException(f"There is no user with name {name}.")
 
         query = "DELETE FROM Users WHERE Name=?"
@@ -373,6 +442,15 @@ class SqliteStorageClient(StorageClientInterface):
     async def add_user(self, c_name: str, user_name: str,
                        permission=MEMBER,
                        destination=CHAT):
+        """ Add user to the chat/channel.
+
+        :param c_name: name of chat/channel.
+        :param user_name: name of user
+        :param permission: permissions of user in chat (POSSIBLE_PERMISSIONS)
+        :param destination: CHAT or CHANNEL
+
+        :raise BadStorageParamException: if there is no such user or chat/channel.
+        """
 
         assert destination in POSSIBLE_PERMISSIONS, \
             f"Bad destination {destination}"
@@ -385,12 +463,14 @@ class SqliteStorageClient(StorageClientInterface):
         if destination == CHAT:
             query = '''
             -- If there has already been such user in such chat - ignore
-            INSERT OR IGNORE INTO UsersChats (UID, CID, Permission) VALUES (?, ?, ?) 
+            INSERT OR IGNORE INTO UsersChats (UID, CID, Permission) 
+            VALUES (?, ?, ?) 
             '''
         else:
             query = '''
             -- If there has already been such user in such channel - ignore 
-            INSERT OR IGNORE INTO UsersChannels (UID, CID, Permission) VALUES (?, ?, ?)
+            INSERT OR IGNORE INTO UsersChannels (UID, CID, Permission) 
+            VALUES (?, ?, ?)
             '''
 
         user_id = await self._get_user_id(user_name)
@@ -412,6 +492,15 @@ class SqliteStorageClient(StorageClientInterface):
     async def change_user_permission(self, c_name: str, user_name: str,
                                      permission,
                                      destination=CHAT):
+        """ Make the user admin, member etc in chat.
+
+        :param c_name: name of chat/channel
+        :param user_name: name of user
+        :param permission: from POSSIBLE_PERMISSIONS
+        :param destination: CHAT or CHANNEL
+
+        :raise BadStorageParamException: if there is no such user or chat/channel.
+        """
         assert destination in POSSIBLE_PERMISSIONS, \
             f"Bad destination {destination}"
         assert permission in POSSIBLE_PERMISSIONS[destination], \
@@ -437,6 +526,14 @@ class SqliteStorageClient(StorageClientInterface):
     @_check_connected
     async def remove_user(self, c_name: str, user_name: str,
                           destination=CHAT):
+        """ Remove user from chat/channel.
+
+        :param c_name: name of chat/channel
+        :param user_name: name of user
+        :param destination: CHAT or CHANNEL
+
+        :raise BadStorageParamException: if there is no such user or chat/channel.
+        """
         assert destination in POSSIBLE_PERMISSIONS, \
             f"Bad destination {destination}"
 
@@ -457,6 +554,15 @@ class SqliteStorageClient(StorageClientInterface):
     #  CHECK ONCE MORE IF YOU'RE USING RIGHT PARAMETERS
     @_check_connected
     async def find(self, pattern: str, destination=CHAT, use_regex=False) -> list:
+        """ Find chats/channels similar to the given pattern.
+
+        Using of regex hasn't implemented yet.
+
+        :param pattern: substring or regex pattern
+        :param destination: CHAT or CHANNEL
+        :param use_regex: True if you wand to use regex
+        :return: list of names.
+        """
         if use_regex:
             raise NotImplementedError("Find using regex hasn't still being implemented.")
         if not pattern:
@@ -475,8 +581,16 @@ class SqliteStorageClient(StorageClientInterface):
     #  CHECK ONCE MORE IF YOU'RE USING RIGHT PARAMETERS
     @_check_connected
     async def find_users(self, pattern: str, use_regex=False) -> list:
+        """ Find chats/channels similar to the given pattern.
+
+        Using of regex hasn't implemented yet.
+
+        :param pattern: substring or regex pattern
+        :param use_regex: True if you wand to use regex
+        :return: list of names.
+        """
         if use_regex:
-            raise NotImplementedError("Find using regex hasn't still being implemented.")
+            raise NotImplementedError("Find using regex hasn't still been implemented.")
         if not pattern:
             return []
 
@@ -489,20 +603,32 @@ class SqliteStorageClient(StorageClientInterface):
     # FIXME I have no idea if it actually works.
     @_check_connected
     async def create_chat(self, creator: str, chat_name: str, members: list):
-        creator_id = self._get_user_id(creator)
+        """ Creates a new chat.
+
+        :param creator: name of user that created it.
+        :param chat_name: name of chat
+        :param members: list of names of users that must be added.
+
+        :raise BadStorageParamException: if there is no such user or chat with
+                                         such name already exists.
+        """
+        creator_id = await self._get_user_id(creator)
         if not creator_id:
             raise BadStorageParamException(f"There is not user with name {creator}")
-        chat_id = self._get_c_id(chat_name, destination=CHAT)
+        chat_id = await self._get_c_id(chat_name, destination=CHAT)
         if chat_id:
             raise BadStorageParamException(f"Chat with name {chat_name} already exists.")
 
         query = "INSERT INTO Chats (Name, CreatorID) VALUES (?, ?)"
         await self._work_queue.put( (query, (chat_name, creator_id)) )
 
-        chat_id = self._get_c_id(chat_name, destination=CHAT)
+        chat_id = await self._get_c_id(chat_name, destination=CHAT)
+
+        # ignore if there have already been records about belonging such user
+        # to such chat
         query = '''INSERT OR IGNORE INTO UsersChats (UID, CID) VALUES (?, ?)'''
         for mem_name in members:
-            mem_id = self._get_user_id(mem_name)
+            mem_id = await self._get_user_id(mem_name)
             if not mem_id:
                 continue
             await self._work_queue.put( (query, (mem_id, chat_id)) )
@@ -510,7 +636,12 @@ class SqliteStorageClient(StorageClientInterface):
     # FIXME check if works
     @_check_connected
     async def get_members(self, chat_name: str) -> list:
-        chat_id = self._get_c_id(chat_name, destination=CHAT)
+        """ Get all the members of the given chat (their names).
+
+        :return: list of tuples
+        :raise BadStorageParamException: if there is no chat with given name.
+        """
+        chat_id = await self._get_c_id(chat_name, destination=CHAT)
         if not chat_id:
             raise BadStorageParamException(f'There is no chat with name {chat_name}.')
         query = '''SELECT 
@@ -520,18 +651,33 @@ class SqliteStorageClient(StorageClientInterface):
                    FROM UsersChats      
                    WHERE UsersChats.CID=?'''
 
-        await self._do_read_query(query, (chat_name, ))
+        await self._do_read_query(query, (chat_id, ))
         return self._curs.fetchall()
+
+    # TODO implement
+    @_check_connected
+    async def set_ban_user(self, chat_name: str, user_name: str, ban=NORM):
+        """
+
+        :param chat_name:
+        :param user_name:
+        :param ban:
+        :return:
+        """
+        pass
+
+    async def is_banned(self, chat, user, use_id=False) -> bool:
+        return True
 
     # ========================== channels ======================================
 
     # FIXME check if works
     @_check_connected
     async def create_channel(self, creator: str, channel_name: str):
-        creator_id = self._get_user_id(creator)
+        creator_id = await self._get_user_id(creator)
         if not creator_id:
-            raise BadStorageParamException(f"There is not user with name {creator}")
-        channel_id = self._get_c_id(channel_name, destination=CHANNEL)
+            raise BadStorageParamException(f"There is no user with name {creator}")
+        channel_id = await self._get_c_id(channel_name, destination=CHANNEL)
         if channel_id:
             raise BadStorageParamException(f"Chat with name {channel_name} already exists.")
         query = "INSERT INTO Channels (Name, CreatorID) VALUES (?, ?)"
@@ -540,4 +686,83 @@ class SqliteStorageClient(StorageClientInterface):
     # ========================== messages ======================================
     @_check_connected
     async def get_messages(self, chat_name: str) -> list:
-        pass
+        c_id = await self._get_c_id(chat_name)
+        if not c_id:
+            raise BadStorageParamException(f"There is no chat with name {chat_name}.")
+        query = '''SELECT U.Name, 
+                          C.Created, 
+                          C.Status, 
+                          C.Type, 
+                          C.Content 
+                   FROM ChatMessages C 
+                   LEFT JOIN Users U on C.AuthorID = U.Id
+                   WHERE C.CID=?'''
+        await self._do_read_query(query, (c_id,))
+        return self._curs.fetchall()
+
+    @_check_connected
+    async def add_message(self, chat_name: str, author, content,
+                          message_type=TEXT):
+        assert message_type in MESSAGE_TYPES, f'Bad message_type: {TEXT}'
+        c_id = await self._get_c_id(chat_name)
+        if not c_id:
+            raise BadStorageParamException(f"There is no chat with name {chat_name}.")
+        u_id = await self._get_user_id(author)
+        if not u_id:
+            raise BadStorageParamException(f"There is no user with name {author}.")
+
+        if self.is_banned(c_id, u_id, use_id=True):
+            raise YouRBannedWriteError(f"The user {author} is banned in {chat_name}.")
+
+        query = '''INSERT INTO ChatMessages (CID, 
+                            AuthorID,  
+                            Type, 
+                            Content
+                   ) 
+                   VALUES (?, ?, ?, ?)'''
+        params = (c_id, u_id, message_type, content)
+        await self._work_queue.put((query, params))
+
+    @_check_connected
+    async def find_messages(self, chat_name: str, pattern: str,
+                            author='',
+                            use_regex=False) -> list:
+        if use_regex:
+            raise NotImplementedError("Find using regex hasn't still been implemented.")
+
+        c_id = await self._get_c_id(chat_name, destination=CHAT)
+        if not c_id:
+            raise BadStorageParamException(f"There is no chat with name {chat_name}.")
+
+        query = f'''
+            SELECT * FROM ChatMessages 
+            WHERE Type={TEXT} AND CID=? AND Content LIKE ?
+             
+            -- check if user name similar to required 
+            AND AuthorID IN (SELECT Id FROM Users WHERE Name LIKE ?)           
+        '''
+        await self._do_read_query(query, (c_id, pattern, author))
+        return self._curs.fetchall()
+
+    # ========================= publications ===================================
+    @_check_connected
+    async def get_publications(self, channel_name: str) -> list:
+        c_id = await self._get_c_id(channel_name, destination=CHANNEL)
+        if not c_id:
+            raise BadStorageParamException(f'There is no channel with name {channel_name}.')
+        query = '''SELECT 
+                        (SELECT Users.Name FROM Users WHERE Users.Id=UsersChannels.UID) as Name, 
+                        Permission, 
+                        Status 
+                   FROM UsersChannels      
+                   WHERE UsersChannels.CID=?'''
+
+        await self._do_read_query(query, (c_id,))
+        return self._curs.fetchall()
+
+    @_check_connected
+    async def add_publication(self, channel_name: str, publications: list):
+        raise NotImplementedError()
+
+    async def find_publication(self, pattern: str, use_regex=False):
+        raise NotImplementedError()
