@@ -15,6 +15,9 @@ GLOBAL_CONFIG_FILE = os.path.realpath("../config.ini")
 LOG_SERVER_FILE = '../logs/server.log'
 CRITICAL_LOG_SERVER_FILE = '../logs/server_critical.log'
 
+RSA_PRIVATE_KEY_PATH = "../private_key.rsa"
+RSA_PUBLIC_KEY_PATH = "../public_key.rsa"
+
 MEMBER = 1
 ADMIN = 2
 CREATOR = 0

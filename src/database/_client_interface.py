@@ -9,7 +9,9 @@
 
 from abc import ABC, abstractmethod
 from ..app_constants import *
-from .database_constants import *
+from ..server_constants import *
+
+from typing import List
 
 
 class BadStorageParamException(Exception):
@@ -24,6 +26,7 @@ class YouRBannedWriteError(Exception):
     pass
 
 
+# TODO Integrate Message, ChatUser, Publication and so on.
 class StorageClientInterface(ABC):
 
     @abstractmethod
@@ -54,31 +57,32 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
-    async def get_user_info(self, name: str) -> tuple:
+    async def get_user_info(self, name: str) -> User:
         pass
 
     @abstractmethod
-    async def delete_user(self, name: str):
+    async def delete_user(self, user: User):
         pass
 
     @abstractmethod
-    async def modify_user(self, name, new_name: str, new_password: bytes):
+    async def modify_user(self, user: User, new_name: str, new_password: bytes):
         pass
 
     @abstractmethod
-    async def add_user(self, c_name: str, user_name: str,
+    async def add_user(self, chatOrChannel, user: User,
                        permission=MEMBER,
                        destination=CHAT):
         pass
 
     @abstractmethod
-    async def change_user_permission(self, c_name: str, user_name: str,
+    async def change_user_permission(self, chatOrChannel,
+                                     user: User,
                                      permission,
                                      destination=CHAT):
         pass
 
     @abstractmethod
-    async def remove_user(self, c_name: str, user_name: str,
+    async def remove_user(self, chatOrChannel, user: User,
                           destination=CHAT):
         pass
 
@@ -87,57 +91,57 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
-    async def find_users(self, pattern: str, use_regex=False) -> list:
+    async def find_users(self, pattern: str, use_regex=False) -> List[User]:
         pass
 
     # ============================= chat =======================================
     @abstractmethod
-    async def create_chat(self, creator: str, chat_name: str, members: list):
+    async def create_chat(self, creator: User, chat_name: str, members: List[User]):
         pass
 
     @abstractmethod
-    async def set_ban_user(self, chat_name: str, user_name: str, ban=NORM):
+    async def set_ban_user(self, chat: Chat, user: User, ban=NORM):
         pass
 
     @abstractmethod
-    async def is_banned(self, chat, user, use_id=False) -> bool:
+    async def is_banned(self, chat: Chat, user: User, use_id=False) -> bool:
         pass
 
     @abstractmethod
-    async def get_members(self, chat_name: str) -> list:
+    async def get_members(self, chat: Chat) -> List[ChatUser]:
         pass
 
     # ========================== channels ======================================
 
     @abstractmethod
-    async def create_channel(self, creator: str, channel_name: str):
+    async def create_channel(self, creator: User, channel_name: str):
         pass
 
     # ========================== messages ======================================
 
     @abstractmethod
-    async def get_messages(self, chat_name: str) -> list:
+    async def get_messages(self, chat: Chat) -> List[Message]:
         pass
 
     @abstractmethod
-    async def add_message(self, chat_name: str, author, content,
-                          message_type=TEXT):
+    async def add_message(self, chat: Chat, message: Message):
         pass
 
     @abstractmethod
-    async def find_messages(self, chat_name: str, pattern: str,
-                            use_regex=False) -> list:
+    async def find_messages(self, chat: Chat, pattern: str,
+                            author_name='',
+                            use_regex=False) -> List[Message]:
         pass
 
     # ========================= publications ===================================
 
     @abstractmethod
-    async def get_publications(self, channel_name: str) -> list:
+    async def get_publications(self, channel: Channel) -> List[Publication]:
         pass
 
     @abstractmethod
-    async def add_publication(self, channel_name: str, publications: list):
+    async def add_publication(self, channel: Channel, publication: Publication):
         pass
 
-    async def find_publication(self, pattern: str, use_regex=False):
+    async def find_publication(self, pattern: str, use_regex=False) -> List[Publication]:
         pass
