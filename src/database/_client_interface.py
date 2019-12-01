@@ -57,7 +57,7 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
-    async def get_user_info(self, name: str) -> User:
+    async def get_user_info(self, name: str) -> tuple:
         pass
 
     @abstractmethod

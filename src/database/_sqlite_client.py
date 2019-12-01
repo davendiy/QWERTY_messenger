@@ -229,10 +229,6 @@ CREATE TRIGGER ChannelCreatorUpdater INSERT ON Channels
 STOP_WORKING = '############# STOP_WORKING ##############'
 
 
-class SingletonException(Exception):
-    pass
-
-
 class NotWorkingException(Exception):
     pass
 
@@ -248,33 +244,40 @@ class AsyncWorker:
     # TODO
     #  maybe there is some sense for making the dictionary from this set
     #  and implement creating only one example of this class via method __new__
-    ALREADY_WORKING = set()
+    _instances = {}
+
+    def __new__(cls, filedb):
+        """ Realization of pattern singleton.
+
+        Before creating it check is there already created worker for such
+        database. If there is - returns it. Else - creates new.
+        :param filedb: name of database
+        """
+        if filedb not in AsyncWorker._instances:
+            AsyncWorker._instances[filedb] = super(AsyncWorker, cls).__new__(cls, filedb)
+        return AsyncWorker._instances[filedb]
 
     def __init__(self, filedb):
         """ Create new asynchronous worker for the given database.
 
         :param filedb: path to database
-        :raise SingletonException: if it tries to create new worker for database,
-                                   that has already had worker started on.
         """
-        if filedb in AsyncWorker.ALREADY_WORKING:
-            raise SingletonException(f"Can't create 2 workers for {filedb}")
         self._filename = filedb
         self._queue = curio.UniversalQueue()   # queue that
         self._conn = None
         self._curs = None
+        self.is_work = False
 
     # TODO try make this method to do more queries at one commit
     # TODO add benchmark for testing
     async def start(self):
         """ Connect and start the mainloop.
         """
-        AsyncWorker.ALREADY_WORKING.add(self._filename)
-
         # check_same_thread=False because we provide access to the database
         # from different threads
         self._conn = sqlite3.connect(self._filename, check_same_thread=False)
         curs = self._conn.cursor()
+        self.is_work = True
         logger.info(f"[*] Worker for {self._filename} started to work...")
 
         while True:
@@ -345,10 +348,11 @@ class SqliteStorageClient(StorageClientInterface):
         try:
             self._conn = sqlite3.connect(self._filename, check_same_thread=False)
             self._curs = self._conn.cursor()
-            self._curs.executescript(PREPARE_DATABASE_QUERY)
+            if not self._worker.is_work:
+                self._curs.executescript(PREPARE_DATABASE_QUERY)
+                # launch worker in background
+                self._worker_task = await curio.spawn(self._worker.start)
 
-            # launch worker in background
-            self._worker_task = await curio.spawn(self._worker.start)
         except Exception as e:
             logger.error(f"Exception during creation of new SqliteStorageClient: {e}")
             raise
@@ -416,12 +420,12 @@ class SqliteStorageClient(StorageClientInterface):
         raise NotImplementedError()
 
     @_check_connected
-    async def get_user_info(self, name: str) -> tuple:
+    async def get_user_info(self, name: str, include_password=False) -> tuple:
         """ Captures all the information of user from the Users by name.
 
         It could be Name, Image, email and so on later.
         """
-        query = "SELECT * FROM Users WHERE Name=?"
+        query = "SELECT PasswordHash FROM Users WHERE Name=?"
         await self._do_read_query(query, (name,))
         res = self._curs.fetchone()
         res = res if res is not None else ()
@@ -620,7 +624,7 @@ class SqliteStorageClient(StorageClientInterface):
 
     # ============================= chat =======================================
 
-    # FIXME I have no idea if it actually works.
+    # FIXME I have no idea does it actually work.
     @_check_connected
     async def create_chat(self, creator: User, chat_name: str, members: List[User]):
         """ Creates a new chat.
