@@ -21,8 +21,6 @@ MESSAGE_TYPES = {
     DOCUMENT,
 }
 
-
-
 CHANNELS = "Channels"
 CHATS = "Chats"
 
@@ -31,57 +29,3 @@ USERS_CHANNELS = 'UsersChannels'
 
 PRIVATE = 1
 PUBLIC = 0
-
-
-USERS_TABLE_FIELDS = (
-    "Id",
-    "Name",
-    "PasswordHash"
-)
-CHATS_TABLE_FIELDS = (
-    "Id",
-    "Name",
-    "Created",
-    "CreatorID",
-)
-USERS_CHATS_TABLE_FIELDS = (
-    "UID",
-    "CID",
-    "Permission",
-    "Status"
-)
-CHANNELS_TABLE_FIELDS = (
-    "Id",
-    "Name",
-    "Created",
-    "CreatorID",
-)
-USERS_CHANNELS_TABLE_FIELDS = (
-    "UID",
-    "CID",
-    "Permission",
-    "Status"
-)
-CHANNEL_MESSAGES_TABLE_FIELDS = (
-    "Id",
-    "CID",
-    "Created",
-    "Status",
-    "Type",
-    "Content",
-)
-CHAT_MESSAGES_TABLE_FIELDS = (
-    "Id",
-    "CID",
-    "AuthorID",
-    "Created",
-    "Status",
-    "Type",
-    "Contents",
-)
-PRIVATE_CHATS_TABLE_FIELDS = (
-    "Id",
-    "InterlocutorID",
-    "Created",
-    "Key",
-)

@@ -7,7 +7,7 @@
 # Taras Shevchenko National University of Kyiv
 # email: davendiy@gmail.com
 
-from .config_reader import *
+from ..config_reader import *
 import os
 
 SERVER_DATABASE = '../store/Server.db'

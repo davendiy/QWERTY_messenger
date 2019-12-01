@@ -8,8 +8,8 @@
 # email: davendiy@gmail.com
 
 from abc import ABC, abstractmethod
-from ..app_constants import *
-from ..server_constants import *
+from ..constants.server_constants import *
+from ..constants.app_constants import *
 
 from typing import List, Set
 

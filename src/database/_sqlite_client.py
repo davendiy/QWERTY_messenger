@@ -241,11 +241,9 @@ class AsyncWorker:
     such format:  tuple(query: str, params: tuple)
     """
 
-    # TODO
-    #  maybe there is some sense for making the dictionary from this set
-    #  and implement creating only one example of this class via method __new__
     _instances = {}
 
+    # FIXME WHETHER IT WORKS
     def __new__(cls, filedb):
         """ Realization of pattern singleton.
 
@@ -336,7 +334,7 @@ class SqliteStorageClient(StorageClientInterface):
         self._conn = None
         self._curs = None
 
-    # FIXME be careful, I don't know if it's right to make only one connection
+    # FIXME be careful, I don't know whether it's right to make only one connection
     async def start(self):
         """ Prepare the client for work.
 
@@ -467,7 +465,7 @@ class SqliteStorageClient(StorageClientInterface):
             f"Bad permission {permission}"
 
         # FIXME
-        #   Check if it works fast, maybe it should be replaced with
+        #   Check whether it works fast, maybe it should be replaced with
         #   one big request INSERT that checks inside all the possible problems
         if destination == CHAT:
             query = '''
@@ -624,7 +622,7 @@ class SqliteStorageClient(StorageClientInterface):
 
     # ============================= chat =======================================
 
-    # FIXME I have no idea does it actually work.
+    # FIXME I have no idea whether it actually works.
     @_check_connected
     async def create_chat(self, creator: User, chat_name: str, members: List[User]):
         """ Creates a new chat.

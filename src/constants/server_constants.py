@@ -33,6 +33,7 @@ JSON_METADATA_TEMPLATE = {
 
 CHUNK = 4096
 
+
 Message = namedtuple('Message', ['author', 'created', 'status', 'content_type', 'content'])
 Publication = namedtuple("Publication", ['created', 'content_type', 'content'])
 ChatUser = namedtuple("ChatUser", ["name", "permission", "status"])
@@ -45,7 +46,3 @@ USERS_CHANGES = 1
 MESSAGE_CHANGES = 0
 CHAT_CHANGES = 2
 
-
-READY_FOR_TRANSFERRING = "#####Ready for transferring#####"
-REGISTRATION = "#####Start redistration.#####"
-SIGN_IN = "#####Sign in#####"
