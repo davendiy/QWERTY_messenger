@@ -7,8 +7,3 @@
 # Taras Shevchenko National University of Kyiv
 # email: davendiy@gmail.com
 
-from src.database.database_clients import *
-import curio
-
-test = SQLiteStoreClient(SERVER_DATABASE)
-curio.run(test.prepare_database())

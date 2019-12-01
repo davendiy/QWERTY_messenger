@@ -9,8 +9,7 @@
 
 from .database import StorageClientInterface, SqliteStorageClient
 from .sequrity import *
-from .server_constants import *
-from .app_constants import *
+from .constants import *
 
 from typing import Set, List, Dict
 import json
@@ -107,7 +106,7 @@ class UserObserver:
 
         await self._recipient.send(json.dumps(metadata))
         resp = await self._recipient.recv(1024)
-        if str(resp, encoding='utf-8') == READY_FOR_TRANSFERRING:
+        if resp == READY_FOR_TRANSFERRING:
             await self._recipient.sendall(data)
 
 
@@ -183,11 +182,14 @@ class ChatAssistant:
         self._observers[userObserver.get_name()] = userObserver
         await userObserver.connect(self)
 
-    async def detach_user_assistant(self, userObserver: UserObserver):
+    async def detach_user_assistant(self, user: User):
         """ Remove userAssistant from the set of observers.
         """
-        if userObserver.get_name() in self._observers:
-            del self._observers[userObserver.get_name()]
+        if user.name in self._observers:
+            del self._observers[user.name]
+        if len(self._observers) == 0:
+            await self.end()
+        del self
 
     async def notify_new_message(self, message: Message):
         """ Inform all of the users that the new message was added.
@@ -242,5 +244,3 @@ async def create_chat(chat_name: str, creator: User,
 
 class ChannelAssistant:
     pass
-
-

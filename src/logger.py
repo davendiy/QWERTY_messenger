@@ -8,7 +8,7 @@
 # email: davendiy@gmail.com
 
 import logging
-from .app_constants import *
+from .constants.app_constants import *
 
 # Create a custom logger
 logger = logging.getLogger("main")
