@@ -12,17 +12,22 @@ from collections import namedtuple
 CHAT_NAME = 'ChatName'
 CONTENT_TYPE = 'ContentType'
 CONTENT_SIZE = 'ContentSize'
-SIGN = 'Sign'
+SIGN_OF_SERVER = 'Sign'
+
 NEW_MESSAGE = "NewMessage"
 NEW_USER = "NewUser"
 CHAT_MEMBERS = "ChatMembers"
 CHAT_MESSAGES = "ChatMessages"
+NEW_PERMISSION = "NewPermission"
+
+TRANSFERS_TYPES = {NEW_MESSAGE, NEW_USER,
+                   CHAT_MESSAGES, CHAT_MEMBERS, NEW_PERMISSION}
 
 JSON_METADATA_TEMPLATE = {
     CHAT_NAME: '',
     CONTENT_TYPE: NEW_MESSAGE,
     CONTENT_SIZE: 0,
-    SIGN: 0
+    SIGN_OF_SERVER: 0
 }
 
 
@@ -41,4 +46,6 @@ MESSAGE_CHANGES = 0
 CHAT_CHANGES = 2
 
 
-READY_FOR_TRANSFERRING = "Ready for transferring"
+READY_FOR_TRANSFERRING = "#####Ready for transferring#####"
+REGISTRATION = "#####Start redistration.#####"
+SIGN_IN = "#####Sign in#####"

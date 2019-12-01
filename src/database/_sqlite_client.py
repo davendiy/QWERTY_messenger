@@ -340,6 +340,8 @@ class SqliteStorageClient(StorageClientInterface):
         It connects to the database, gets cursor, launches the worker and
         executes script for creating all the tables, indexes and triggers.
         """
+        if self._conn is not None:
+            return
         try:
             self._conn = sqlite3.connect(self._filename, check_same_thread=False)
             self._curs = self._conn.cursor()
@@ -351,7 +353,6 @@ class SqliteStorageClient(StorageClientInterface):
             logger.error(f"Exception during creation of new SqliteStorageClient: {e}")
             raise
 
-    @_check_connected
     async def end(self):
         """ Closes the connection between client and database,
         interrupts the worker.
@@ -653,9 +654,20 @@ class SqliteStorageClient(StorageClientInterface):
                 continue
             await self._work_queue.put( (query, (mem_id, chat_id)) )
 
+    @_check_connected
+    async def get_chat_info(self, chat_name: str) -> Chat:
+        query = '''SELECT Name, 
+                          (SELECT Users.Name FROM Users WHERE Users.Id=CreatorID) as Creator,
+                          Created 
+                   FROM Chats WHERE Name=?'''
+
+        await self._do_read_query(query, (chat_name, ))
+        res = self._curs.fetchone()
+        return Chat(*res) if res else None
+
     # FIXME check if works
     @_check_connected
-    async def get_members(self, chat: Chat) -> List[ChatUser]:
+    async def get_members(self, chat: Chat) -> Set[ChatUser]:
         """ Get all the members of the given chat (their names).
 
         :return: list of tuples
@@ -673,7 +685,7 @@ class SqliteStorageClient(StorageClientInterface):
                    WHERE UsersChats.CID=?'''
 
         await self._do_read_query(query, (chat_id, ))
-        return [ChatUser(*el) for el in self._curs.fetchall()]
+        return {ChatUser(*el) for el in self._curs.fetchall()}
 
     # TODO implement
     @_check_connected
@@ -712,7 +724,7 @@ class SqliteStorageClient(StorageClientInterface):
                           C.Content 
                    FROM ChatMessages C 
                    LEFT JOIN Users U on C.AuthorID = U.Id
-                   WHERE C.CID=?'''
+                   WHERE C.CID=? ORDER BY C.Created DESC '''
         await self._do_read_query(query, (c_id,))
 
         return [Message(*el) for el in self._curs.fetchall()]
@@ -783,7 +795,7 @@ class SqliteStorageClient(StorageClientInterface):
                    Type,
                    Content
                    FROM ChannelMessages      
-                   WHERE CID=?'''
+                   WHERE CID=? ORDER BY Created DESC '''
 
         await self._do_read_query(query, (c_id,))
         return [Publication(*el) for el in self._curs.fetchall()]

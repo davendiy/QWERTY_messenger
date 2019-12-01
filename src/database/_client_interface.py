@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from ..app_constants import *
 from ..server_constants import *
 
-from typing import List
+from typing import List, Set
 
 
 class BadStorageParamException(Exception):
@@ -100,6 +100,10 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
+    async def get_chat_info(self, chat_name: str) -> Chat:
+        pass
+
+    @abstractmethod
     async def set_ban_user(self, chat: Chat, user: User, ban=NORM):
         pass
 
@@ -108,7 +112,7 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
-    async def get_members(self, chat: Chat) -> List[ChatUser]:
+    async def get_members(self, chat: Chat) -> Set[ChatUser]:
         pass
 
     # ========================== channels ======================================
