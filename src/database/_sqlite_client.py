@@ -241,9 +241,9 @@ class AsyncWorker:
     such format:  tuple(query: str, params: tuple)
     """
 
-    _instances = {}
+    __instances = {}
 
-    # FIXME WHETHER IT WORKS
+    # FIXME I DON'T KNOW WHETHER IT WORKS
     def __new__(cls, filedb):
         """ Realization of pattern singleton.
 
@@ -251,9 +251,9 @@ class AsyncWorker:
         database. If there is - returns it. Else - creates new.
         :param filedb: name of database
         """
-        if filedb not in AsyncWorker._instances:
-            AsyncWorker._instances[filedb] = super(AsyncWorker, cls).__new__(cls, filedb)
-        return AsyncWorker._instances[filedb]
+        if filedb not in AsyncWorker.__instances:
+            AsyncWorker.__instances[filedb] = super(AsyncWorker, cls).__new__(cls, filedb)
+        return AsyncWorker.__instances[filedb]
 
     def __init__(self, filedb):
         """ Create new asynchronous worker for the given database.
@@ -395,6 +395,27 @@ class SqliteStorageClient(StorageClientInterface):
             await self._do_read_query(query, (c_name,))
             c_id = self._curs.fetchone()
         return c_id if not c_id else c_id[0]
+
+    @_check_connected
+    async def get_users_belong(self, user: User) -> list:
+        """ Get all the chats and channels where the given user is member.
+
+        :return: list of Chat and Channel
+        """
+        u_id = self._get_user_id(user.name)
+        if not u_id:
+            raise BadStorageParamException(f"There is no user with name {user.name}")
+        query = '''SELECT Name, Created, CreatorID FROM Chats 
+                    WHERE Chats.Id IN (SELECT CID FROM UsersChats WHERE UID=?)'''
+        await self._do_read_query(query, (u_id,))
+        res = [Chat(*el) for el in self._curs.fetchall()]
+
+        query = '''SELECT Name, Created, CreatorID FROM Channels
+                    WHERE Id IN (SELECT CID FROM UsersChannels WHERE UID=?) 
+                '''
+        await self._do_read_query(query, (u_id,))
+        res = res + [Channel(*el) for el in self._curs.fetchall()]
+        return res
 
     @_check_connected
     async def new_user(self, name: str, password: bytearray):

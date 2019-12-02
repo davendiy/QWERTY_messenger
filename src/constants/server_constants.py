@@ -12,13 +12,15 @@ from collections import namedtuple
 CHAT_NAME = 'ChatName'
 CONTENT_TYPE = 'ContentType'
 CONTENT_SIZE = 'ContentSize'
-SIGN_OF_SERVER = 'Sign'
+SIGNATURE_OF_SERVER = 'Signature'
 
 NEW_MESSAGE = "NewMessage"
 NEW_USER = "NewUser"
 CHAT_MEMBERS = "ChatMembers"
 CHAT_MESSAGES = "ChatMessages"
 NEW_PERMISSION = "NewPermission"
+CHATS_LIST = "ChatsList"
+
 
 TRANSFERS_TYPES = {NEW_MESSAGE, NEW_USER,
                    CHAT_MESSAGES, CHAT_MEMBERS, NEW_PERMISSION}
@@ -27,7 +29,7 @@ JSON_METADATA_TEMPLATE = {
     CHAT_NAME: '',
     CONTENT_TYPE: NEW_MESSAGE,
     CONTENT_SIZE: 0,
-    SIGN_OF_SERVER: 0
+    SIGNATURE_OF_SERVER: 0
 }
 
 
@@ -45,4 +47,3 @@ Channel = namedtuple("Channel", ["name", "created", "creator"])
 USERS_CHANGES = 1
 MESSAGE_CHANGES = 0
 CHAT_CHANGES = 2
-

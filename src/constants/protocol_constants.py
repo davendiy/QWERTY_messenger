@@ -9,6 +9,7 @@
 """
 PROTOCOL OF DATA EXCHANGING BETWEEN USER AND SERVER
 """
+from .server_constants import *
 
 READY_FOR_TRANSFERRING = b"#####READY_FOR_TRANSFERING#####"
 ATOM_LENGTH = 2048
@@ -27,6 +28,13 @@ ATOM_LENGTH = 2048
 
 NAME = "Name"
 PASSWORD = "Password"
+
+JSON_OUT_METADATA = {
+    CONTENT_SIZE: '',
+    CONTENT_TYPE: '',
+    SIGNATURE_OF_SERVER: ''
+}
+
 
 # TODO add new features for user
 JSON_REGISTRATION_TEMPLATE = {
@@ -57,15 +65,40 @@ JSON_SIGN_IN_TEMPLATE = {
     PASSWORD: "",
 }
 
-WRONG_PASSWORD = "#####WRONG_PASSWORD#####"
+WRONG_PASSWORD = b"#####WRONG_PASSWORD#####"
 
+# ========================= Chat creating ======================================
+"""
+1. Client sends command __CREATE_CHAT__ to server.
+2. Server checks if all the parameters are correct.
+3. Doing Verification of server.
+4. Client sends json if verification is successfully passed.
+        {
+            "Name": ...,
+            "ContentType": "ChatMembers",
+            "ContentSize": amount of bytes that will be sent,
+        }
+5. Server checks if all the parameters are correct.
+6. If they are, server sends __READY_FOR_TRANSFERRING__
+7. Client sends all the bytes that is pickle of list of members.
+8. Server adds all the members to the new chat and creates ChatAssistant. 
+"""
 
 CREATE_CHAT = b"#####CREATE_CHAT#####"
+
+
+JSON_CREATE_CHAT_FORMAT = {
+    NAME: "",
+    CONTENT_TYPE: CHAT_MEMBERS,
+    CONTENT_SIZE: "",
+}
+
+
 OPEN_CHAT = b"#####OPEN_CHAT#####"
 MESSAGE = b"#####MESSAGE#####"
 DELETE_CHAT = b"#####DELETE_CHAT#####"
 EXIT_FROM_CHAT = b"#####EXIT_FROM_CHAT#####"
-
+LOG_OUT = b"#####LOG_OUT#####"
 
 """
 

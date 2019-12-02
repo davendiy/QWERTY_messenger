@@ -61,6 +61,10 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
+    async def get_users_belong(self, user: User) -> list:
+        pass
+
+    @abstractmethod
     async def delete_user(self, user: User):
         pass
 

@@ -8,6 +8,7 @@
 # email: davendiy@gmail.com
 
 from .database import StorageClientInterface, SqliteStorageClient
+from .database import BadStorageParamException
 from .sequrity import *
 from .constants import *
 
@@ -24,9 +25,9 @@ class UserObserver:
     any changing.
     """
 
-    def __init__(self, user: User, user_socket):
+    def __init__(self, user: User, user_out_socket):
         self.user = user
-        self._recipient = user_socket
+        self._recipient = user_out_socket
         self._last_update = {}
 
     def get_name(self):
@@ -101,22 +102,35 @@ class UserObserver:
         metadata = JSON_METADATA_TEMPLATE.copy()
         metadata[CONTENT_SIZE] = len(data)
         metadata[CONTENT_TYPE] = content_type
-        metadata[SIGN_OF_SERVER] = sign_message(data)
+        metadata[SIGNATURE_OF_SERVER] = sign_message(data)
         metadata[CHAT_NAME] = await source.get_name()
 
-        await self._recipient.send(json.dumps(metadata))
+        await self._recipient.sendall(json.dumps(metadata))
         resp = await self._recipient.recv(1024)
         if resp == READY_FOR_TRANSFERRING:
             await self._recipient.sendall(data)
 
 
 class ChatAssistant:
-    """ Observed object that realizes active session of chat.
+    """ Observed object singleton that realizes active session of chat.
 
     It means that this object will be active only
     if there is at least one member of this chat that will be in
     this chat at the moment.
     """
+
+    __instances = {}
+
+    # FIXME I DON'T KNOW WHETHER IT WORKS
+    def __new__(cls, db_client: StorageClientInterface, chat: Chat):
+        if chat.name not in ChatAssistant.__instances:
+            ChatAssistant.__instances[chat.name] = \
+                super(ChatAssistant, cls).__new__(cls, db_client, chat)
+        return ChatAssistant.__instances[chat.name]
+
+    @classmethod
+    def get_already_working(cls, chat_name: str):
+        return ChatAssistant.__instances.get(chat_name, None)
 
     def __init__(self, db_client: StorageClientInterface, chat: Chat):
         """ Initialization, but not launching of chatAssistant
@@ -124,7 +138,7 @@ class ChatAssistant:
         :param db_client: started or not client of database.
         :param chat: chat we make assistant for
         """
-        self._observers = {}        # type: Dict[str: UserObserver]
+        self._observers = {}           # type: Dict[str: UserObserver]
         self._db_client = db_client
         self._chat = chat
         self._messages = []            # type: List[Message]
@@ -149,6 +163,7 @@ class ChatAssistant:
         """
         del self._messages
         await self._db_client.end()
+        del self.__instances[self._chat.name]
 
     async def add_user(self, user: User, user_socket, permission=MEMBER):
         """ Add user to the chat in database and create new UserAssistant for
@@ -240,6 +255,19 @@ async def create_chat(chat_name: str, creator: User,
     await new_chat_assistant.start()
     await new_chat_assistant.attach_user_assistant(UserObserver(creator, creator_socket))
     return new_chat_assistant
+
+
+async def get_chat_assistant(chat_name: str) -> ChatAssistant:
+    chat_assistant = ChatAssistant.get_already_working(chat_name)
+    if chat_assistant is None:
+        new_db_client = StorageClientImplementation(SERVER_DATABASE)
+        await new_db_client.start()
+        chat = await new_db_client.get_chat_info(chat_name)
+        if not chat:
+            raise BadStorageParamException(f"There is no chat with name {chat_name}")
+        chat_assistant = ChatAssistant(new_db_client, chat)
+        await chat_assistant.start()
+    return chat_assistant
 
 
 class ChannelAssistant:
