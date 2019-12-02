@@ -14,6 +14,8 @@ from .server_constants import *
 READY_FOR_TRANSFERRING = b"#####READY_FOR_TRANSFERING#####"
 ATOM_LENGTH = 2048
 
+BAD_JSON_FORMAT = b"Bad JSON format"
+
 # ============================ Registration ====================================
 """
 1. Clients sends command __REGISTRATION__ to server.
@@ -93,9 +95,41 @@ JSON_CREATE_CHAT_FORMAT = {
     CONTENT_SIZE: "",
 }
 
+# ========================= Chat opening =======================================
+"""    
+1. Client sends command __OPEN_CHAT__ to server.
+2. Server checks if all the parameters are correct
+3. If OK, sends to the client __READY_FOR_TRANSFERRING__.
+4. Client sends json.
+        {
+            "Name": ...          # name of the chat
+            "ContentType": CHAT/CHANNEL
+            ...                  # there could be possible features
+        }
+5. Server checks if all the parameters are correct.
+6. If OK, gets ChatAssistant from cache (or creates it) and adds there
+   new UserObserver with auxiliary user socket.
+7. Run mainloop of messages sending
+"""
 
 OPEN_CHAT = b"#####OPEN_CHAT#####"
+
+JSON_OPEN_CHAT_FORMAT = {
+    NAME: "",
+    CONTENT_TYPE: ""
+}
+
+# ============================= Message ========================================
+"""
+"""
+
 MESSAGE = b"#####MESSAGE#####"
+
+JSON_MESSAGE_TEMPLATE = {
+    CONTENT_TYPE: "",
+    CONTENT_SIZE: "",
+}
+
 DELETE_CHAT = b"#####DELETE_CHAT#####"
 EXIT_FROM_CHAT = b"#####EXIT_FROM_CHAT#####"
 LOG_OUT = b"#####LOG_OUT#####"

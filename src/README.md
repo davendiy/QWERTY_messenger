@@ -60,17 +60,17 @@ all the neccessary information.
     8. If 7 successfully done - remember user and notify him.
     9. If it's OK - send all the user's chats via auxiliary connection.
 
-## Creating chat
+## Creating of chat
 Creating of new chat requires from client new unique name of chat and 
 list of real users that will be added to this chat.
 
     1. Client sends command __CREATE_CHAT__ to server.
     2. Server checks if all the parameters are correct.
-    3. Doing Verification of server.
-    4. Client sends json if verification is successfully passed.
+    3. If OK, sends to the client __READY_FOR_TRANSFERRING__.
+    4. Client sends json.
             {
-                "Name": ...,
-                "ContentType": "ListOfMembers",
+                "Name": ...,          # name of the chat 
+                "ContentType": "ListOfMembers", 
                 "ContentSize": amount of bytes that will be sent,
             }
     5. Server checks if all the parameters are correct.
@@ -80,3 +80,19 @@ list of real users that will be added to this chat.
     9. Server adds client's auxiliary socket to the ChatAssistant. This causes
        automatical sending of all the messages and list of members to this socket.
     
+
+## Chat opening
+    
+    1. Client sends command __OPEN_CHAT__ to server.
+    2. Server checks if all the parameters are correct
+    3. If OK, sends to the client __READY_FOR_TRANSFERRING__.
+    4. Client sends json.
+            {
+                "Name": ...          # name of the chat
+                "ContentType": CHAT/CHANNEL
+                ...                  # there could be possible features
+            }
+    5. Server checks if all the parameters are correct.
+    6. If OK, gets ChatAssistant from cache (or creates it) and adds there
+       new UserObserver with auxiliary user socket.
+    7. Run mainloop of messages sending

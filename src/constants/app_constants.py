@@ -4,19 +4,19 @@
 # created: 25.11.2019
 # by David Zashkolny
 # 3 course, comp math
-# Taras Shevchenko National University of Kyiv
+# Taras Shevchenko Natio    nal University of Kyiv
 # email: davendiy@gmail.com
 
 from ..config_reader import *
 import os
 
-SERVER_DATABASE = '../store/Server.db'
-GLOBAL_CONFIG_FILE = os.path.realpath("../config.ini")
-LOG_SERVER_FILE = '../logs/server.log'
-CRITICAL_LOG_SERVER_FILE = '../logs/server_critical.log'
+SERVER_DATABASE = './store/Server.db'
+GLOBAL_CONFIG_FILE = os.path.realpath("./config.ini")
+LOG_SERVER_FILE = './logs/server.log'
+CRITICAL_LOG_SERVER_FILE = './logs/server_critical.log'
 
-RSA_PRIVATE_KEY_PATH = "../private_key.rsa"
-RSA_PUBLIC_KEY_PATH = "../public_key.rsa"
+RSA_PRIVATE_KEY_PATH = "./private_key.rsa"
+RSA_PUBLIC_KEY_PATH = "./public_key.rsa"
 
 MEMBER = 1
 ADMIN = 2

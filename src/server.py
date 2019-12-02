@@ -21,13 +21,19 @@ TODO:
        using RSA.
 """
 
+
+# TODO write logs
+
+
 import curio
 import socket
 
 from .logger import logger
 from .session import *
-from .database import BadStorageParamException
+from .database import BadStorageParamException, YouRBannedWroteError
 from .constants.protocol_constants import *
+from .constants.app_constants import *
+from .constants.database_constants import *
 
 ANNOYING_SOCKETS = {}
 TIME_SLEEP = 1
@@ -67,12 +73,16 @@ class UnknownAnswerError(Exception):
     pass
 
 
-class UserAssistant:
+class NotLoggedError(Exception):
+    pass
+
+
+class UserAssistant(metaclass=DebugMetaclass):
 
     def __init__(self, client_main_socket, addr, db_client: StorageClientInterface):
 
         # address and socket of manager connection
-        self._addr = addr
+        self._main_addr = addr
         self._client_main = client_main_socket
 
         # if client logged in via self.confirm_user or self.registration
@@ -84,6 +94,8 @@ class UserAssistant:
         self._client_out = None
         self._client_out_addr = None
 
+        self._user_observer = None
+
         # chosen chat to observe
         self._current_chat = None
 
@@ -91,13 +103,13 @@ class UserAssistant:
         self._db_client = db_client
 
     async def main_process(self):
-        logger.info(f"[*] Start the main process with client {self._addr}...")
+        logger.info(f"[*] Start the main process with client {self._main_addr}...")
 
         while True:
             try:
-                logger.info(f"[<--] Getting command from {self._addr}...")
-                command = await self._client_main.recv(ATOM_LENGTH)
-                logger.info(f"[*] Got {command} from {self._addr}...")
+                logger.info(f"[<--] Getting command from {self._main_addr}...")
+                command = (await self._client_main.recv(ATOM_LENGTH)).strip()
+                logger.info(f"[*] Got {command} from {self._main_addr}...")
                 if command not in COMMANDS:
                     await self._client_main.sendall(b"Wrong command.")
                 else:
@@ -130,53 +142,55 @@ class UserAssistant:
             await self._client_main.sendall(b"You should log out before.")
             return
 
-        logger.info(f"[*] Starting the process of user confirmation for {self._addr}...")
+        logger.info(f"[*] Starting the process of user confirmation for {self._main_addr}...")
         await self._server_signification()
         while True:
-            logger.info(f"[<--] Fetching json from {self._addr}...")
+            logger.info(f"[<--] Fetching json from {self._main_addr}...")
             resp = await self._client_main.recv(ATOM_LENGTH)
 
             data = self._convert_json(JSON_SIGN_IN_TEMPLATE, resp)
             if not data:
-                await self._client_main.sendall(f"Bad JSON format...")
+                await self._client_main.sendall(BAD_JSON_FORMAT)
                 continue
 
             name = data[NAME]
             supposed_password = data[PASSWORD]
 
-            logger.info(f"[*] Got {data} from {self._addr}.")
+            logger.info(f"[*] Got {data} from {self._main_addr}.")
             password_hash = await self._db_client.get_user_info(name)
             if not password_hash:
-                logger.info(f"[*] WRONG_NAME from {self._addr}")
+                logger.info(f"[*] WRONG_NAME from {self._main_addr}")
                 await self._client_main.sendall(WRONG_NAME)
             else:
                 password_hash = password_hash[0]
             try:
                 check_password(supposed_password, password_hash)
             except ValueError:
-                logger.info(f"[*] WRONG_PASSWORD from {self._addr}")
+                logger.info(f"[*] WRONG_PASSWORD from {self._main_addr}")
                 await self._client_main.sendall(WRONG_PASSWORD)
                 continue
 
             # raises Exception if not successful
-            self._client_out, self._client_out_addr = await self._get_out_socket()
+            await self._get_out_socket()
             self._logged_in = True
             self._logged_user = User(name)
-            logger.info(f"[*] Client {self._addr} logged as {name}.")
+            logger.info(f"[*] Client {self._main_addr} logged as {name}.")
             break
         await self.send_all_chats()
 
     async def _get_out_socket(self):
         check_phrase = generate_check_phrase()    # FIXME it might be incorrect
         await self._client_main.sendall(check_phrase)
-        return await curio.timeout_after(TIMEOUT, get_required_connection,
+        self._client_out, self._client_out_addr = \
+            await curio.timeout_after(TIMEOUT, get_required_connection,
                                          check_phrase)
+        self._user_observer = UserObserver(self._logged_user, self._client_out)
 
     # FIXME Check whether it works
     # TODO add protocol
     async def send_all_chats(self):
-        if not self._logged_in:
-            await self._client_main.sendall(b"You should log in before.")
+        await self._check_logged()
+
         metadata = JSON_OUT_METADATA.copy()
 
         data = self._db_client.get_users_belong(self._logged_user)
@@ -222,30 +236,33 @@ class UserAssistant:
             await self._client_main.sendall(b"You should log out before.")
             return
 
-        logger.info(f"[*] Starting the process of user registration for {self._addr}...")
+        logger.info(f"[*] Starting the process of user registration for {self._main_addr}...")
         await self._server_signification()
         while True:
-            logger.info(f"[<--] Fetching json from {self._addr}...")
+            logger.info(f"[<--] Fetching json from {self._main_addr}...")
             resp = await self._client_main.recv(ATOM_LENGTH)
 
             data = self._convert_json(JSON_REGISTRATION_TEMPLATE, resp)
             if not data:
-                await self._client_main.sendall(f"Bad JSON format...")
+                await self._client_main.sendall(BAD_JSON_FORMAT)
                 continue
             name = data[NAME]
             password = data[PASSWORD]
 
-            logger.info(f"[*] Got {data} from {self._addr}.")
+            logger.info(f"[*] Got {data} from {self._main_addr}.")
             password_hash = await self._db_client.get_user_info(name)
 
             if password_hash:  # Already exists
-                logger.info(f"[*] WRONG_NAME from {self._addr}")
+                logger.info(f"[*] WRONG_NAME from {self._main_addr}")
                 await self._client_main.sendall(WRONG_NAME)
 
             await self._db_client.new_user(name, hash_password(password))
+
+            # raises Exception if not successful
+            await self._get_out_socket()
             self._logged_in = True
             self._logged_user = User(name)
-            logger.info(f"[*] Client {self._addr} logged as {name}.")
+            logger.info(f"[*] Client {self._main_addr} logged as {name}.")
             break
 
     # TODO implement
@@ -254,25 +271,25 @@ class UserAssistant:
 
     async def _server_signification(self):
         await self._client_main.sendall(READY_FOR_TRANSFERRING)
-        logger.info(f"[<--] Fetching message from {self._addr} for server signification...")
+        logger.info(f"[<--] Fetching message from {self._main_addr} for server signification...")
         request_phrase = await self._client_main.recv(ATOM_LENGTH)
-        logger.info(f"[-->] Sending signature to {self._addr}...")
+        logger.info(f"[-->] Sending signature to {self._main_addr}...")
         await self._client_main.sendall(sign_message(request_phrase))  # len: 256
 
     async def create_chat(self):
-        if not self._logged_in:
-            await self._client_main.sendall(b"You didn't log in.")
-            return
+        await self._check_logged()
 
         logger.info(f"[*] Starting the process of creating the new chat.")
-        await self._server_signification()
+        await self._client_main.sendall(READY_FOR_TRANSFERRING)
+        # await self._server_signification()
 
         resp = await self._client_main.recv(ATOM_LENGTH)
-        logger.info(f"[<--] Fetching json from {self._addr}...")
+        logger.info(f"[<--] Fetching json from {self._main_addr}...")
 
         data = self._convert_json(JSON_CREATE_CHAT_FORMAT, resp)
         if not data:
-            await self._client_main.sendall(f"Bad JSON format...")
+            await self._client_main.sendall(BAD_JSON_FORMAT)
+            return
 
         # FIXME: DANGEROUS, VULNERABILITY, HAZARD, THREAT
         #  It's so dangerous to fetch any pickle file from clients.
@@ -305,11 +322,61 @@ class UserAssistant:
         except BadStorageParamException:
             await self._client_main.sendall(WRONG_NAME)
 
+    async def _check_logged(self):
+        if not self._logged_in:
+            await self._client_main.sendall(b"You didn't log in.")
+            raise NotLoggedError()
+
     async def open_chat(self):
-        pass
+        await self._check_logged()
+        logger.info(f"[*] Starting process of chat opening for {self._main_addr}")
+        await self._client_main.sendall(READY_FOR_TRANSFERRING)
+
+        resp = await self._client_main.recv(ATOM_LENGTH)
+        data = self._convert_json(JSON_OUT_METADATA, resp)
+        if not data:
+            await self._client_main.sendall(BAD_JSON_FORMAT)
+
+        name = data[NAME]
+        chat_type = data[CONTENT_TYPE]
+        if chat_type == CHAT:
+            chat_assistant = await get_chat_assistant(name)
+
+            members = chat_assistant.get_members()
+            if self._logged_user in members:
+                await chat_assistant.attach_user_observer(self._user_observer)
+            else:
+                await chat_assistant.add_user(self._user_observer)
+            self._current_chat = chat_assistant
+        else:
+            raise NotImplementedError()
 
     async def message(self):
-        pass
+        if self._current_chat is None:
+            await self._client_main.sendall(b"You didn't enter the chat.")
+        await self._server_signification()
+        resp = await self._client_main.recv(ATOM_LENGTH)
+        data = self._convert_json(JSON_MESSAGE_TEMPLATE, resp)
+        if not data:
+            await self._client_main.sendall(BAD_JSON_FORMAT)
+        content_type = data[CONTENT_TYPE]
+        size = data[CONTENT_SIZE]
+        if content_type == TEXT:
+            await self._client_main.sendall(READY_FOR_TRANSFERRING)
+            text = b''
+            done = 0
+            for done in range(0, size, CHUNK):
+                text += await self._client_main.recv(CHUNK)
+            if size - done:
+                text += await self._client_main.recv(size - done)
+            text = str(text, encoding='utf-8')
+            message = Message(self._logged_user.name, '', 0, content_type, text)
+            try:
+                await self._current_chat.new_message(message)
+            except YouRBannedWroteError:
+                await self._client_main.sendall(b"You are banned in this chat.")
+        else:
+            raise NotImplementedError()
 
     async def delete_chat(self):
         pass
@@ -330,9 +397,31 @@ COMMANDS = {
 }
 
 
-async def client_handler(client, addr):
-    logger.info("Connection from", addr)
+async def main_client_handler(client, addr):
+    logger.info(f"Connection from {addr}")
     storage_client = StorageClientImplementation(SERVER_DATABASE)
     await storage_client.start()
     user_assistant = UserAssistant(client, addr, storage_client)
-    await curio.spawn(user_assistant.main_process, daemon=True)
+    await user_assistant.main_process()
+
+
+MAIN_SERVER_HOST = 'localhost'
+MAIN_SERVER_PORT = 25000
+
+DATA_SERVER_HOST = 'localhost'
+DATA_SERVER_PORT = 25001
+
+
+async def chat_servers():
+    logger.info(f"[*] Started main server at {MAIN_SERVER_HOST}:{MAIN_SERVER_PORT}")
+    logger.info(f"[*] Started data server at {DATA_SERVER_HOST}:{DATA_SERVER_PORT}")
+    async with curio.TaskGroup() as g:
+        await g.spawn(curio.tcp_server, MAIN_SERVER_HOST, MAIN_SERVER_PORT,
+                       main_client_handler)
+        await g.spawn(curio.tcp_server, DATA_SERVER_HOST, DATA_SERVER_PORT,
+                       add_annoying_connection)
+
+
+def run():
+
+    curio.run(chat_servers())

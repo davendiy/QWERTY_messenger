@@ -11,6 +11,7 @@ from .database import StorageClientInterface, SqliteStorageClient
 from .database import BadStorageParamException
 from .sequrity import *
 from .constants import *
+from .logger import DebugMetaclass
 
 from typing import Set, List, Dict
 import json
@@ -20,7 +21,7 @@ import pickle
 StorageClientImplementation = SqliteStorageClient
 
 
-class UserObserver:
+class UserObserver(metaclass=DebugMetaclass):
     """ Assistant-observer that checks user's chats and reports about
     any changing.
     """
@@ -99,7 +100,7 @@ class UserObserver:
         :param content_type: the type transfer data (from TRANSFERS_TYPES)
         """
         assert content_type in TRANSFERS_TYPES
-        metadata = JSON_METADATA_TEMPLATE.copy()
+        metadata = JSON_METADATA_OBSERVERS.copy()
         metadata[CONTENT_SIZE] = len(data)
         metadata[CONTENT_TYPE] = content_type
         metadata[SIGNATURE_OF_SERVER] = sign_message(data)
@@ -111,7 +112,7 @@ class UserObserver:
             await self._recipient.sendall(data)
 
 
-class ChatAssistant:
+class ChatAssistant(metaclass=DebugMetaclass):
     """ Observed object singleton that realizes active session of chat.
 
     It means that this object will be active only
@@ -125,7 +126,7 @@ class ChatAssistant:
     def __new__(cls, db_client: StorageClientInterface, chat: Chat):
         if chat.name not in ChatAssistant.__instances:
             ChatAssistant.__instances[chat.name] = \
-                super(ChatAssistant, cls).__new__(cls, db_client, chat)
+                super(ChatAssistant, cls).__new__(cls)
         return ChatAssistant.__instances[chat.name]
 
     @classmethod
@@ -165,18 +166,17 @@ class ChatAssistant:
         await self._db_client.end()
         del self.__instances[self._chat.name]
 
-    async def add_user(self, user: User, user_socket, permission=MEMBER):
+    async def add_user(self, userObserver: UserObserver, permission=MEMBER):
         """ Add user to the chat in database and create new UserAssistant for
         notifying. Also notifies all the active members about this.
 
-        :param user: new user (must exists)
-        :param user_socket: user's client
+        :param userObserver: TODO
         :param permission: what permission this user will has
         """
-        await self._db_client.add_user(self._chat, user,
+        await self._db_client.add_user(self._chat, userObserver.user,
                                        permission, destination=CHAT)
-        await self.attach_user_assistant(UserObserver(user, user_socket))
-        await self.notify_new_member(user)
+        await self.attach_user_observer(userObserver)
+        await self.notify_new_member(userObserver.user)
 
     async def change_user_permission(self, user: User, new_permission=MEMBER):
         await self._db_client.change_user_permission(self._chat, user,
@@ -191,7 +191,7 @@ class ChatAssistant:
         self._messages.append(message)
         await self.notify_new_message(message)
 
-    async def attach_user_assistant(self, userObserver: UserObserver):
+    async def attach_user_observer(self, userObserver: UserObserver):
         """ Add userObserver to the set of observers and notify him about it.
         """
         self._observers[userObserver.get_name()] = userObserver
@@ -253,7 +253,7 @@ async def create_chat(chat_name: str, creator: User,
     chat = await new_db_client.get_chat_info(chat_name)
     new_chat_assistant = ChatAssistant(new_db_client, chat)
     await new_chat_assistant.start()
-    await new_chat_assistant.attach_user_assistant(UserObserver(creator, creator_socket))
+    await new_chat_assistant.attach_user_observer(UserObserver(creator, creator_socket))
     return new_chat_assistant
 
 

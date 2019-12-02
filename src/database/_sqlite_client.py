@@ -78,14 +78,14 @@ User's private database (cryptotext):
 """
 
 from ._client_interface import *
-from ..logger import logger
-from .database_constants import *
+from ..logger import logger, DebugMetaclassForAbstract
+from ..constants.database_constants import *
 
 import sqlite3
 import curio
 from typing import List
 
-from functools import partial
+from functools import partial, wraps
 
 
 PREPARE_DATABASE_QUERY = f'''
@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS ChatMessages (
 
 -- Trigger that adds new record to the UsersChats if 
 -- new chat creates  
-CREATE TRIGGER ChatCreatorUpdater INSERT ON Chats
+CREATE TRIGGER IF NOT EXISTS ChatCreatorUpdater INSERT ON Chats
     BEGIN 
         INSERT INTO UsersChats (UID, CID, Permission) VALUES 
             (new.CreatorID, new.Id, {CREATOR});
@@ -218,7 +218,7 @@ CREATE TRIGGER ChatCreatorUpdater INSERT ON Chats
 
 -- Trigger that adds new record to the UsersChannels if 
 -- new channel creates  
-CREATE TRIGGER ChannelCreatorUpdater INSERT ON Channels
+CREATE TRIGGER IF NOT EXISTS ChannelCreatorUpdater INSERT ON Channels
     BEGIN 
         INSERT INTO UsersChannels (UID, CID, Permission) VALUES 
             (new.CreatorID, new.Id, {CREATOR});
@@ -233,7 +233,7 @@ class NotWorkingException(Exception):
     pass
 
 
-class AsyncWorker:
+class AsyncWorker(metaclass=DebugMetaclass):
     """ Worker that handlers all the queries that make changes in database.
     It should be singleton in order to provide data integrity.
 
@@ -252,7 +252,7 @@ class AsyncWorker:
         :param filedb: name of database
         """
         if filedb not in AsyncWorker.__instances:
-            AsyncWorker.__instances[filedb] = super(AsyncWorker, cls).__new__(cls, filedb)
+            AsyncWorker.__instances[filedb] = super(AsyncWorker, cls).__new__(cls)
         return AsyncWorker.__instances[filedb]
 
     def __init__(self, filedb):
@@ -312,6 +312,8 @@ def _check_connected(async_method):
     """ Decorator for asynchronous methods that checks
     if the method start was used before.
     """
+
+    @wraps(async_method)
     async def _async_method(self, *args, **kwargs):
         if self._conn is None:
             raise NotWorkingException(f"Worker for {self._filename} isn't started. Use the SqliteStorageClient.start()")
@@ -320,7 +322,7 @@ def _check_connected(async_method):
     return _async_method
 
 
-class SqliteStorageClient(StorageClientInterface):
+class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbstract):
     """ Implementation of StorageClientInterface on sqlite.
     """
 
@@ -341,6 +343,7 @@ class SqliteStorageClient(StorageClientInterface):
         It connects to the database, gets cursor, launches the worker and
         executes script for creating all the tables, indexes and triggers.
         """
+        logger.info(f"[*] Storage client for {self._filename} created.")
         if self._conn is not None:
             return
         try:
@@ -359,6 +362,7 @@ class SqliteStorageClient(StorageClientInterface):
         """ Closes the connection between client and database,
         interrupts the worker.
         """
+        logger.info(f"[*] Storage client for {self._filename} closed.")
         if self._conn is not None:
             await self._worker_task.cancel()
             self._conn.close()
@@ -402,6 +406,7 @@ class SqliteStorageClient(StorageClientInterface):
 
         :return: list of Chat and Channel
         """
+        logger.info(f"[*] Getting chats and channel for {user} from database...")
         u_id = self._get_user_id(user.name)
         if not u_id:
             raise BadStorageParamException(f"There is no user with name {user.name}")
@@ -424,7 +429,7 @@ class SqliteStorageClient(StorageClientInterface):
         :raises BadStorageParamException: if the user with given
                                           name already exists
         """
-        logger.info(f"[*] Try to create new user {name} with password {password}")
+        logger.info(f"[*] Try to save new user {name} with password {password}")
 
         if await self._get_user_id(name):
             raise BadStorageParamException(f"User with name {name}"
@@ -444,6 +449,7 @@ class SqliteStorageClient(StorageClientInterface):
 
         It could be Name, Image, email and so on later.
         """
+        logger.info(f"[*] Getting information about {name} from database...")
         query = "SELECT PasswordHash FROM Users WHERE Name=?"
         await self._do_read_query(query, (name,))
         res = self._curs.fetchone()
@@ -457,6 +463,7 @@ class SqliteStorageClient(StorageClientInterface):
         :raises BadStorageParamException: if the user with given
                                           name doesn't exist
         """
+        logger.info(f"[*] Deleting user {User} from database...")
         name = user.name
         if not (await self._get_user_id(name)):
             raise BadStorageParamException(f"There is no user with name {name}.")
@@ -478,6 +485,7 @@ class SqliteStorageClient(StorageClientInterface):
 
         :raise BadStorageParamException: if there is no such user or chat/channel.
         """
+        logger.info(f"[*] Saving adding of {user} to {chatOrChannel} to the database...")
         c_name = chatOrChannel.name
         user_name = User.name
         assert destination in POSSIBLE_PERMISSIONS, \
@@ -530,7 +538,7 @@ class SqliteStorageClient(StorageClientInterface):
 
         :raise BadStorageParamException: if there is no such user or chat/channel.
         """
-
+        logger.info(f"[*] Changing {user}'s permissions in {chatOrChannel} in database...")
         user_name = user.name
         c_name = chatOrChannel.name
         assert destination in POSSIBLE_PERMISSIONS, \
@@ -566,6 +574,7 @@ class SqliteStorageClient(StorageClientInterface):
 
         :raise BadStorageParamException: if there is no such user or chat/channel.
         """
+        logger.info(f"[*] Saving info about removing user {user} from {chatOrChannel} to the database...")
         user_name = user.name
         c_name = chatOrChannel.name
         assert destination in POSSIBLE_PERMISSIONS, \
@@ -626,7 +635,7 @@ class SqliteStorageClient(StorageClientInterface):
     #  CHECK ONCE MORE IF YOU'RE USING RIGHT PARAMETERS
     @_check_connected
     async def find_users(self, pattern: str, use_regex=False) -> List[User]:
-        """ Find chats/channels similar to the given pattern.
+        """ Find users similar to the given pattern.
 
         Using of regex hasn't implemented yet.
 
@@ -634,6 +643,7 @@ class SqliteStorageClient(StorageClientInterface):
         :param use_regex: True if you wand to use regex
         :return: list of names.
         """
+        logger.info(f"[*] Getting users from database using pattern {pattern}...")
         if use_regex:
             raise NotImplementedError("Find using regex hasn't still been implemented.")
 
@@ -758,7 +768,7 @@ class SqliteStorageClient(StorageClientInterface):
         chat_name = Chat.name
         author_name = message.author
         content = message.content
-        assert message_type in MESSAGE_TYPES, f'Bad message_type: {TEXT}'
+        assert message_type in MESSAGE_TYPES, f'Bad message_type: {message_type}'
         c_id = await self._get_c_id(chat_name)
         if not c_id:
             raise BadStorageParamException(f"There is no chat with name {chat_name}.")

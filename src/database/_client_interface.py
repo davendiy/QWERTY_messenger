@@ -10,6 +10,7 @@
 from abc import ABC, abstractmethod
 from ..constants.server_constants import *
 from ..constants.app_constants import *
+from ..logger import DebugMetaclass
 
 from typing import List, Set
 
