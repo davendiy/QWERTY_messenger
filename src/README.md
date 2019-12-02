@@ -5,7 +5,7 @@ This step is using to guarantee the client that this is real server,
 not a fiction. 
 
     1. Server sends __READY_FOR_TRANSFERRING__.
-    2. Client sends if message - random array of 2048 bytes.
+    2. Client sends control message - random array of 2048 bytes.
     5. Server signs this message and responses the signature (array of 256 bytes).
     6. Client verifies that signature is actually from server.
 
