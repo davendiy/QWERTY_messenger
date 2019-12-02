@@ -22,7 +22,7 @@ class StorageConnectionError(Exception):
     pass
 
 
-class YouRBannedWriteError(Exception):
+class YouRBannedWroteError(Exception):
     pass
 
 

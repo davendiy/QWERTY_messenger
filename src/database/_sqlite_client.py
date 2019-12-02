@@ -767,7 +767,7 @@ class SqliteStorageClient(StorageClientInterface):
             raise BadStorageParamException(f"There is no user with name {author_name}.")
 
         if self.is_banned(c_id, u_id, use_id=True):
-            raise YouRBannedWriteError(f"The user {author_name} is banned in {chat_name}.")
+            raise YouRBannedWroteError(f"The user {author_name} is banned in {chat_name}.")
 
         query = '''INSERT INTO ChatMessages (CID, 
                             AuthorID,  
