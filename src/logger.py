@@ -13,7 +13,7 @@ import types
 from abc import ABCMeta
 from .constants.app_constants import *
 
-ENABLE_LOGGER_METACLASS = True
+ENABLE_LOGGER_METACLASS = False
 
 
 # Create a custom logger

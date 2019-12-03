@@ -26,7 +26,7 @@ TODO:
 
 
 import curio
-import socket
+from curio import socket
 
 from .logger import logger
 from .session import *
@@ -37,13 +37,14 @@ from .constants.database_constants import *
 
 ANNOYING_SOCKETS = {}
 TIME_SLEEP = 1
-TIMEOUT = 10
+TIMEOUT = 40
 
 
 async def add_annoying_connection(client_connection, addr):
-    client_connection.settimeout(TIMEOUT)
+    client_connection.setblocking(0)
+    logger.info(f"[*] Annoying connection from {addr}")
     try:
-        check_phrase = await client_connection.recv(ATOM_LENGTH)
+        check_phrase = await curio.timeout_after(TIMEOUT, client_connection.recv, ATOM_LENGTH)
         if len(check_phrase) != ATOM_LENGTH:
             client_connection.sendall(b"Bad check phrase.")
             client_connection.close()
@@ -52,7 +53,7 @@ async def add_annoying_connection(client_connection, addr):
         global ANNOYING_SOCKETS
         ANNOYING_SOCKETS[check_phrase] = (client_connection, addr)
 
-    except socket.timeout:
+    except curio.TaskTimeout:
         client_connection.close()
 
 
@@ -80,7 +81,7 @@ class NotLoggedError(Exception):
 class UserAssistant(metaclass=DebugMetaclass):
 
     def __init__(self, client_main_socket, addr, db_client: StorageClientInterface):
-
+        client_main_socket.setblocking(0)
         # address and socket of manager connection
         self._main_addr = addr
         self._client_main = client_main_socket
@@ -108,10 +109,13 @@ class UserAssistant(metaclass=DebugMetaclass):
         while True:
             try:
                 logger.info(f"[<--] Getting command from {self._main_addr}...")
-                command = (await self._client_main.recv(ATOM_LENGTH)).strip()
+                command = await self._client_main.recv(ATOM_LENGTH)
                 logger.info(f"[*] Got {command} from {self._main_addr}...")
-                if command not in COMMANDS:
+                if command not in COMMANDS and command:
                     await self._client_main.sendall(b"Wrong command.")
+                elif not command:
+                    await curio.sleep(1)
+                    continue
                 else:
                     await COMMANDS[command](self)
             except socket.error:
@@ -119,8 +123,9 @@ class UserAssistant(metaclass=DebugMetaclass):
                 break
             except curio.TaskTimeout:
                 await self._client_main.sendall(b"Can't fetch auxiliary connection.")
+                logger.error(f'[*] Error with creating auxiliary connection.')
             except Exception as e:
-                logger.error(e)
+                logger.exception(e)
                 await self._client_main.close()
                 break
 
@@ -144,71 +149,93 @@ class UserAssistant(metaclass=DebugMetaclass):
 
         logger.info(f"[*] Starting the process of user confirmation for {self._main_addr}...")
         await self._server_signification()
-        while True:
-            logger.info(f"[<--] Fetching json from {self._main_addr}...")
-            resp = await self._client_main.recv(ATOM_LENGTH)
 
-            data = self._convert_json(JSON_SIGN_IN_TEMPLATE, resp)
-            if not data:
-                await self._client_main.sendall(BAD_JSON_FORMAT)
-                continue
+        logger.info(f"[<--] Fetching json from {self._main_addr}...")
+        resp = await self._client_main.recv(ATOM_LENGTH)
 
-            name = data[NAME]
-            supposed_password = data[PASSWORD]
+        data = self._convert_json(JSON_SIGN_IN_TEMPLATE, resp)
+        if not data:
+            await self._client_main.sendall(BAD_JSON_FORMAT)
+            return
 
-            logger.info(f"[*] Got {data} from {self._main_addr}.")
-            password_hash = await self._db_client.get_user_info(name)
-            if not password_hash:
-                logger.info(f"[*] WRONG_NAME from {self._main_addr}")
-                await self._client_main.sendall(WRONG_NAME)
-            else:
-                password_hash = password_hash[0]
-            try:
-                check_password(supposed_password, password_hash)
-            except ValueError:
-                logger.info(f"[*] WRONG_PASSWORD from {self._main_addr}")
-                await self._client_main.sendall(WRONG_PASSWORD)
-                continue
+        name = data[NAME]
+        supposed_password = data[PASSWORD]
 
-            # raises Exception if not successful
-            await self._get_out_socket()
-            self._logged_in = True
-            self._logged_user = User(name)
-            logger.info(f"[*] Client {self._main_addr} logged as {name}.")
-            break
+        logger.info(f"[*] Got {data} from {self._main_addr}.")
+        password_hash = await self._db_client.get_user_info(name)
+        if not password_hash:
+            logger.info(f"[*] WRONG_NAME from {self._main_addr}")
+            await self._client_main.sendall(WRONG_NAME)
+        else:
+            password_hash = password_hash[0]
+        try:
+            check_password(supposed_password, password_hash)
+        except ValueError:
+            logger.info(f"[*] WRONG_PASSWORD from {self._main_addr}")
+            await self._client_main.sendall(WRONG_PASSWORD)
+            return
+
+        # raises Exception if not successful
+        await self._get_out_socket()
+        self._logged_in = True
+        self._logged_user = User(name)
+        logger.info(f"[*] Client {self._main_addr} logged as {name}.")
+
         await self.send_all_chats()
 
     async def _get_out_socket(self):
-        check_phrase = generate_check_phrase()    # FIXME it might be incorrect
-        await self._client_main.sendall(check_phrase)
-        self._client_out, self._client_out_addr = \
-            await curio.timeout_after(TIMEOUT, get_required_connection,
-                                         check_phrase)
-        self._user_observer = UserObserver(self._logged_user, self._client_out)
+        logger.info(f'[*] Starting the process of creating auxiliary connection...')
+        await self._client_main.sendall(READY_FOR_TRANSFERRING)
+        logger.info(f'[*] Waiting for READY_FOR_TRANSFERRING from {self._main_addr}...')
+        resp = await self._client_main.recv(ATOM_LENGTH)
+        if resp == READY_FOR_TRANSFERRING:
+            check_phrase = generate_check_phrase()    # FIXME it might be incorrect
+            await self._client_main.sendall(check_phrase)
+            self._client_out, self._client_out_addr = \
+                await curio.timeout_after(TIMEOUT, get_required_connection,
+                                             check_phrase)
+            self._user_observer = UserObserver(self._logged_user, self._client_out)
+        else:
+            raise UnknownAnswerError(resp)
 
     # FIXME Check whether it works
     # TODO add protocol
     async def send_all_chats(self):
         await self._check_logged()
 
+        logger.info(f'[-->] Sending {READY_FOR_TRANSFERRING} to the {self._client_out_addr}...')
+        await self._client_out.sendall(READY_FOR_TRANSFERRING)
+
+        logger.info(f'[<--] Waiting {READY_FOR_TRANSFERRING} from the {self._client_out_addr}...')
+        resp = await self._client_out.recv(ATOM_LENGTH)
+        if resp != READY_FOR_TRANSFERRING:
+            raise UnknownAnswerError(resp)
+
         metadata = JSON_OUT_METADATA.copy()
 
-        data = self._db_client.get_users_belong(self._logged_user)
+        data = await self._db_client.get_users_belong(self._logged_user)
         pickled_data = pickle.dumps(data)
         metadata[CONTENT_TYPE] = CHATS_LIST
         metadata[CONTENT_SIZE] = len(pickled_data)
-        metadata[SIGNATURE_OF_SERVER] = sign_message(pickled_data)
-        await self._client_out.sendall(json.dumps(metadata))
+        metadata[SIGNATURE_OF_SERVER] = sign_message(pickled_data).hex()
+        verify(pickled_data, bytes.fromhex(metadata[SIGNATURE_OF_SERVER]))
+        logger.info(f'[-->] Sending {metadata} to the {self._client_out_addr}...')
+        await self._client_out.sendall(bytes(json.dumps(metadata), encoding='utf-8'))
+
+        logger.info(f'[<--] Waiting {READY_FOR_TRANSFERRING} from the {self._client_out_addr}...')
         resp = await self._client_out.recv(ATOM_LENGTH)
         if resp == READY_FOR_TRANSFERRING:
+            logger.info(f'[-->] Sending pickled data of {len(pickled_data)} bytes to the {self._client_out_addr}')
             await self._client_out.sendall(pickled_data)
+        else:
+            raise UnknownAnswerError(resp)
 
     @staticmethod
     def _convert_json(json_format, given_data):
         succ = True
         given_json = {}
         try:
-            given_json = json.loads(given_data)
+            given_json = json.loads(str(given_data, encoding='utf-8'))
         except (ValueError, TypeError):
             succ = False
         if succ:
@@ -238,32 +265,31 @@ class UserAssistant(metaclass=DebugMetaclass):
 
         logger.info(f"[*] Starting the process of user registration for {self._main_addr}...")
         await self._server_signification()
-        while True:
-            logger.info(f"[<--] Fetching json from {self._main_addr}...")
-            resp = await self._client_main.recv(ATOM_LENGTH)
 
-            data = self._convert_json(JSON_REGISTRATION_TEMPLATE, resp)
-            if not data:
-                await self._client_main.sendall(BAD_JSON_FORMAT)
-                continue
-            name = data[NAME]
-            password = data[PASSWORD]
+        logger.info(f"[<--] Fetching json from {self._main_addr}...")
+        resp = await self._client_main.recv(ATOM_LENGTH)
+        logger.info(f"[*] Got {resp}.")
+        data = self._convert_json(JSON_REGISTRATION_TEMPLATE, resp)
+        if not data:
+            await self._client_main.sendall(BAD_JSON_FORMAT)
+            return
+        name = data[NAME]
+        password = data[PASSWORD]
 
-            logger.info(f"[*] Got {data} from {self._main_addr}.")
-            password_hash = await self._db_client.get_user_info(name)
+        logger.info(f"[*] Got {data} from {self._main_addr}.")
+        password_hash = await self._db_client.get_user_info(name)
 
-            if password_hash:  # Already exists
-                logger.info(f"[*] WRONG_NAME from {self._main_addr}")
-                await self._client_main.sendall(WRONG_NAME)
+        if password_hash:  # Already exists
+            logger.info(f"[*] WRONG_NAME from {self._main_addr}")
+            await self._client_main.sendall(WRONG_NAME)
+            return
 
-            await self._db_client.new_user(name, hash_password(password))
-
-            # raises Exception if not successful
-            await self._get_out_socket()
-            self._logged_in = True
-            self._logged_user = User(name)
-            logger.info(f"[*] Client {self._main_addr} logged as {name}.")
-            break
+        await self._db_client.new_user(name, hash_password(password))
+        # raises Exception if not successful
+        await self._get_out_socket()
+        self._logged_in = True
+        self._logged_user = User(name)
+        logger.info(f"[*] Client {self._main_addr} logged as {name}.")
 
     # TODO implement
     async def log_out(self):
@@ -275,6 +301,7 @@ class UserAssistant(metaclass=DebugMetaclass):
         request_phrase = await self._client_main.recv(ATOM_LENGTH)
         logger.info(f"[-->] Sending signature to {self._main_addr}...")
         await self._client_main.sendall(sign_message(request_phrase))  # len: 256
+        verify(request_phrase, sign_message(request_phrase))
 
     async def create_chat(self):
         await self._check_logged()
@@ -283,9 +310,9 @@ class UserAssistant(metaclass=DebugMetaclass):
         await self._client_main.sendall(READY_FOR_TRANSFERRING)
         # await self._server_signification()
 
-        resp = await self._client_main.recv(ATOM_LENGTH)
         logger.info(f"[<--] Fetching json from {self._main_addr}...")
-
+        resp = await self._client_main.recv(ATOM_LENGTH)
+        logger.info(f'[*] Got {resp} from {self._main_addr}.')
         data = self._convert_json(JSON_CREATE_CHAT_FORMAT, resp)
         if not data:
             await self._client_main.sendall(BAD_JSON_FORMAT)
@@ -300,13 +327,17 @@ class UserAssistant(metaclass=DebugMetaclass):
         #  Once more: DON'T RUN THIS MESSENGER ON PUBLIC SERVER UNTIL IT USES PICKLE HERE
         name = data[NAME]
         content_type = data[CONTENT_TYPE]
+
         if content_type != CHAT_MEMBERS:
             await self._client_main.sendall(b"Incorrect content type")
         content_size = data[CONTENT_SIZE]
         list_members_pickled = b''
-        done = 0
-        for done in range(0, content_size, CHUNK):
+        logger.info(f'[-->] Sending {READY_FOR_TRANSFERRING} to the {self._main_addr}...')
+        await self._client_main.sendall(READY_FOR_TRANSFERRING)
+        logger.info(f'[<--] Fetching {content_size} bytes from {self._main_addr}...')
+        for _ in range(0, content_size, CHUNK):
             list_members_pickled += await self._client_main.recv(CHUNK)
+        done = len(list_members_pickled)
         if content_size - done:
             list_members_pickled += await self._client_main.recv(content_size-done)
         try:
@@ -332,6 +363,7 @@ class UserAssistant(metaclass=DebugMetaclass):
         logger.info(f"[*] Starting process of chat opening for {self._main_addr}")
         await self._client_main.sendall(READY_FOR_TRANSFERRING)
 
+        logger.info(f"[<--] Fetching json from {self._main_addr}...")
         resp = await self._client_main.recv(ATOM_LENGTH)
         data = self._convert_json(JSON_OUT_METADATA, resp)
         if not data:
@@ -355,6 +387,8 @@ class UserAssistant(metaclass=DebugMetaclass):
         if self._current_chat is None:
             await self._client_main.sendall(b"You didn't enter the chat.")
         await self._server_signification()
+
+        logger.info(f"[<--] Fetching json from {self._main_addr}...")
         resp = await self._client_main.recv(ATOM_LENGTH)
         data = self._convert_json(JSON_MESSAGE_TEMPLATE, resp)
         if not data:
@@ -412,13 +446,23 @@ DATA_SERVER_HOST = 'localhost'
 DATA_SERVER_PORT = 25001
 
 
+async def tcp_server(host, port, target):
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((host, port))
+    server.listen(5)
+    async with server:
+        while True:
+            client, addr = await server.accept()
+            await curio.spawn(target, client, addr)
+
 async def chat_servers():
     logger.info(f"[*] Started main server at {MAIN_SERVER_HOST}:{MAIN_SERVER_PORT}")
     logger.info(f"[*] Started data server at {DATA_SERVER_HOST}:{DATA_SERVER_PORT}")
     async with curio.TaskGroup() as g:
-        await g.spawn(curio.tcp_server, MAIN_SERVER_HOST, MAIN_SERVER_PORT,
+        await g.spawn(tcp_server, MAIN_SERVER_HOST, MAIN_SERVER_PORT,
                        main_client_handler)
-        await g.spawn(curio.tcp_server, DATA_SERVER_HOST, DATA_SERVER_PORT,
+        await g.spawn(tcp_server, DATA_SERVER_HOST, DATA_SERVER_PORT,
                        add_annoying_connection)
 
 

@@ -407,7 +407,7 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
         :return: list of Chat and Channel
         """
         logger.info(f"[*] Getting chats and channel for {user} from database...")
-        u_id = self._get_user_id(user.name)
+        u_id = await self._get_user_id(user.name)
         if not u_id:
             raise BadStorageParamException(f"There is no user with name {user.name}")
         query = '''SELECT Name, Created, CreatorID FROM Chats 
@@ -673,19 +673,19 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
         if chat_id:
             raise BadStorageParamException(f"Chat with name {chat_name} already exists.")
 
-        query = "INSERT INTO Chats (Name, CreatorID) VALUES (?, ?)"
+        query = '''INSERT INTO Chats (Name, CreatorID) 
+                    VALUES (?, ?)'''
         await self._work_queue.put( (query, (chat_name, creator_id)) )
-
-        chat_id = await self._get_c_id(chat_name, destination=CHAT)
 
         # ignore if there have already been records about belonging such user
         # to such chat
-        query = '''INSERT OR IGNORE INTO UsersChats (UID, CID) VALUES (?, ?)'''
+        query = '''INSERT OR IGNORE INTO UsersChats (UID, CID)
+                    VALUES (?, (SELECT Id FROM Chats WHERE Name=?))'''
         for member in members:
             mem_id = await self._get_user_id(member.name)
             if not mem_id:
                 continue
-            await self._work_queue.put( (query, (mem_id, chat_id)) )
+            await self._work_queue.put( (query, (mem_id, chat_name)) )
 
     @_check_connected
     async def get_chat_info(self, chat_name: str) -> Chat:

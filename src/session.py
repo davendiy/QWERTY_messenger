@@ -13,6 +13,7 @@ from .sequrity import *
 from .constants import *
 from .logger import DebugMetaclass
 
+import datetime
 from typing import Set, List, Dict
 import json
 import pickle
@@ -236,6 +237,11 @@ class ChatAssistant(metaclass=DebugMetaclass):
         pass
 
 
+# TODO
+#  There is a possible bug with chat creating.
+#  The changes in database don't commit in time of creation, it could get some time.
+#  So, if some user getting online in that time, when the chat is creating
+#  he doesn't get information about adding himself to this chat.
 async def create_chat(chat_name: str, creator: User,
                       members: List[User], creator_socket) -> ChatAssistant:
     """ Factory that creates new chat and returns its assistant.
@@ -247,10 +253,11 @@ async def create_chat(chat_name: str, creator: User,
     :return:
     """
     new_db_client = StorageClientImplementation(SERVER_DATABASE)
+    members.append(creator)
     await new_db_client.start()
     await new_db_client.create_chat(creator, chat_name, members)
 
-    chat = await new_db_client.get_chat_info(chat_name)
+    chat = Chat(chat_name, creator, datetime.datetime.now())
     new_chat_assistant = ChatAssistant(new_db_client, chat)
     await new_chat_assistant.start()
     await new_chat_assistant.attach_user_observer(UserObserver(creator, creator_socket))

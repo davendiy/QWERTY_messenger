@@ -113,24 +113,30 @@ def verify(message: bytes, signature: bytes):
     signer.verify(tmp, signature)
 
 
-def hash_password(password: bytes):
+def hash_password(password):
     """ Create hash of password for storage.
 
     :param password: array of bytes
     :return: array of 60 bytes
     """
+    if isinstance(password, str):
+        password = bytes(password, encoding='utf-8')
     b64pwd = b64encode(SHA256.new(password).digest())
     bcrypt_hash = bcrypt(b64pwd, 12)
     return bcrypt_hash
 
 
-def check_password(user_password: bytes, password_hash: bytes):
+def check_password(user_password: bytes, password_hash):
     """ Checks whether the password that server got from user is right.
 
     :param user_password: array of bytes
     :param password_hash: array of 60 bytes
     :return:
     """
+    if isinstance(password_hash, str):
+        password_hash = bytes(password_hash, encoding='utf-8')
+    if isinstance(user_password, str):
+        user_password = bytes(user_password, encoding='utf-8')
     b64pwd = b64encode(SHA256.new(user_password).digest())
     bcrypt_check(b64pwd, password_hash)
 
