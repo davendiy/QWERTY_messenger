@@ -40,11 +40,11 @@ Let's consider each of them separately.
 
 #### 1. Database client
 
-__StorageClientInterface__ - interface of database client.
+[__StorageClientInterface__](./src/database/_client_interface.py) - interface of database client.
 
 The main requirement - supporting of multiple asynchronous connection.
 
-__SqliteStorageClient__ - current implementation through SQLite3.
+[__SqliteStorageClient__](./src/database/_sqlite_client.py) - current implementation through SQLite3.
 
 Table Users
 
@@ -97,9 +97,7 @@ Table ChatMessages
 
 Sqlite code could be found [here](https://github.com/davendiy/QWERTY_messenger/blob/master/src/database/prepare.sql)
 
-
-
-__AsyncWorker__ - (just for SqliteStorageClient) class that provides saving of changes to the database.
+[__AsyncWorker__](./src/database/_sqlite_client.py) - (just for SqliteStorageClient) class that provides saving of changes to the database.
 The main problem is blocking of database when someone tries to make a query that
 changes it (insert, update, delete, etc). So in order to guarantee the synchronous
 execuction of such queries all of them are put to the queue and AsyncWorker executes them
@@ -108,3 +106,24 @@ later one after another.
 Objects of this class are singletons - means that for each database (with unique path)
 there is __only one__ AsyncWorker.
 
+### Abstract application logic
+
+[ChatAssistant](./src/session.py) - auxiliary class for chats. Singleton (unique for each of chats). It starts when
+at least one user opens the connected chat. Then all the information from this chat
+reads from database and stores in buffer - for fast getting. When some change takes place
+it notify all the members about it. If the last member becomes nonactive - the ChatAssistants 
+is destroyed. All the changes saves in cache and in database in order to keep the speed and 
+avoid possible bugs with data integrity.
+
+[UserObserver](./src/session.py) - class that observes _ChatAssistant_  and 
+notifies user about all the changes there.
+
+### Connection
+
+[UserAssistant](./src/server.py) - personal client's assistant. It is created when 
+the new client connects to the server.
+
+Connection provides via 2 sockets: main and auxiliary. Main socket manages the dialog 
+between server and client. The auxiliary socket is used for background data transferring.
+
+The entire protocol of data transferring is represented [here](./src/README.md).
