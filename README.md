@@ -40,11 +40,11 @@ Let's consider each of them separately.
 
 #### 1. Database client
 
-[__StorageClientInterface__](./src/database/_client_interface.py) - interface of database client.
+[StorageClientInterface](./src/database/_client_interface.py) - interface of database client.
 
 The main requirement - supporting of multiple asynchronous connection.
 
-[__SqliteStorageClient__](./src/database/_sqlite_client.py) - current implementation through SQLite3.
+[SqliteStorageClient](./src/database/_sqlite_client.py) - current implementation through SQLite3.
 
 Table Users
 
@@ -97,7 +97,7 @@ Table ChatMessages
 
 Sqlite code could be found [here](https://github.com/davendiy/QWERTY_messenger/blob/master/src/database/prepare.sql)
 
-[__AsyncWorker__](./src/database/_sqlite_client.py) - (just for SqliteStorageClient) class that provides saving of changes to the database.
+[AsyncWorker](./src/database/_sqlite_client.py) - (just for SqliteStorageClient) class that provides saving of changes to the database.
 The main problem is blocking of database when someone tries to make a query that
 changes it (insert, update, delete, etc). So in order to guarantee the synchronous
 execuction of such queries all of them are put to the queue and AsyncWorker executes them
