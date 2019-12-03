@@ -21,14 +21,12 @@ TODO:
        using RSA.
 """
 
-
 # TODO write logs
 
 
 import curio
 from curio import socket
 
-from .logger import logger
 from .session import *
 from .database import BadStorageParamException, YouRBannedWroteError
 from .constants.protocol_constants import *
@@ -41,6 +39,11 @@ TIMEOUT = 40
 
 
 async def add_annoying_connection(client_connection, addr):
+    """ Function that handles all the auxiliary connections.
+
+    It receives the check phrase and if it's OK, added socket to the dictionary
+    with key == check phrase
+    """
     client_connection.setblocking(0)
     logger.info(f"[*] Annoying connection from {addr}")
     try:
@@ -189,11 +192,11 @@ class UserAssistant(metaclass=DebugMetaclass):
         logger.info(f'[*] Waiting for READY_FOR_TRANSFERRING from {self._main_addr}...')
         resp = await self._client_main.recv(ATOM_LENGTH)
         if resp == READY_FOR_TRANSFERRING:
-            check_phrase = generate_check_phrase()    # FIXME it might be incorrect
+            check_phrase = generate_check_phrase()  # FIXME it might be incorrect
             await self._client_main.sendall(check_phrase)
             self._client_out, self._client_out_addr = \
                 await curio.timeout_after(TIMEOUT, get_required_connection,
-                                             check_phrase)
+                                          check_phrase)
             self._user_observer = UserObserver(self._logged_user, self._client_out)
             await self._client_out.sendall(READY_FOR_TRANSFERRING)
         else:
@@ -340,7 +343,7 @@ class UserAssistant(metaclass=DebugMetaclass):
             list_members_pickled += await self._client_main.recv(CHUNK)
         done = len(list_members_pickled)
         if content_size - done:
-            list_members_pickled += await self._client_main.recv(content_size-done)
+            list_members_pickled += await self._client_main.recv(content_size - done)
         try:
             list_members = pickle.loads(list_members_pickled)
         except (pickle.UnpicklingError, TypeError, AttributeError):
@@ -431,14 +434,15 @@ class UserAssistant(metaclass=DebugMetaclass):
         await self._client_main.sendall(READY_FOR_TRANSFERRING)
         await self.send_all_chats()
 
+
 COMMANDS = {
-    REGISTRATION:   UserAssistant.registration,
-    SIGN_IN:        UserAssistant.confirm_user,
-    LOG_OUT:        UserAssistant.log_out,
-    CREATE_CHAT:    UserAssistant.create_chat,
-    OPEN_CHAT:      UserAssistant.open_chat,
-    MESSAGE:        UserAssistant.message,
-    DELETE_CHAT:    UserAssistant.delete_chat,
+    REGISTRATION: UserAssistant.registration,
+    SIGN_IN: UserAssistant.confirm_user,
+    LOG_OUT: UserAssistant.log_out,
+    CREATE_CHAT: UserAssistant.create_chat,
+    OPEN_CHAT: UserAssistant.open_chat,
+    MESSAGE: UserAssistant.message,
+    DELETE_CHAT: UserAssistant.delete_chat,
     EXIT_FROM_CHAT: UserAssistant.exit_from_chat,
 }
 
@@ -468,16 +472,16 @@ async def tcp_server(host, port, target):
             client, addr = await server.accept()
             await curio.spawn(target, client, addr)
 
+
 async def chat_servers():
     logger.info(f"[*] Started main server at {MAIN_SERVER_HOST}:{MAIN_SERVER_PORT}")
     logger.info(f"[*] Started data server at {DATA_SERVER_HOST}:{DATA_SERVER_PORT}")
     async with curio.TaskGroup() as g:
         await g.spawn(tcp_server, MAIN_SERVER_HOST, MAIN_SERVER_PORT,
-                       main_client_handler)
+                      main_client_handler)
         await g.spawn(tcp_server, DATA_SERVER_HOST, DATA_SERVER_PORT,
-                       add_annoying_connection)
+                      add_annoying_connection)
 
 
 def run():
-
     curio.run(chat_servers())
