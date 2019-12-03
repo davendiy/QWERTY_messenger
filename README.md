@@ -95,7 +95,7 @@ Table ChatMessages
         Type         # image, video, document, plain, voice ...
         Content      # text or ref to necessary file
 
-Sqlite code could be found [here]()
+Sqlite code could be found [here](https://github.com/davendiy/QWERTY_messenger/blob/master/src/database/prepare.sql)
 
 
 
