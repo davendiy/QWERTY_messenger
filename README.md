@@ -7,14 +7,14 @@ Simple python messenger written as final course project for applying programming
     the data is stored at the server.
     
     2. Exchanging of messages in mode peer2peer, where all the data keeps on the
-    users' devices.
+    users' devices. (TODO)
     
-    3. Graphical interface realised via kivy in order to provide easy 
-    porting of this program on Android
+    3. Graphical interface implements via kivy in order to provide easy 
+    porting of this program on Android  (TODO)
     
-    4. Supporting of group chats, channels
+    4. Supporting of group chats, channels (TODO)
     
-    5. Supporting of media viewing.
+    5. Supporting of media viewing. (TODO)
 
 
 ## Realization 
