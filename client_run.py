@@ -9,4 +9,10 @@
 
 from client_src.client import client
 
-client.start()
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) > 1:
+        client.start(sys.argv[1], sys.argv[2])
+    else:
+        client.start()

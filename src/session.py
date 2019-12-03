@@ -11,7 +11,7 @@ from .database import StorageClientInterface, SqliteStorageClient
 from .database import BadStorageParamException
 from .sequrity import *
 from .constants import *
-from .logger import DebugMetaclass
+from .logger import DebugMetaclass, logger
 
 import datetime
 from typing import Set, List, Dict
@@ -100,15 +100,21 @@ class UserObserver(metaclass=DebugMetaclass):
         :param data: obvious
         :param content_type: the type transfer data (from TRANSFERS_TYPES)
         """
+        await self._recipient.sendall(READY_FOR_TRANSFERRING)
+        resp = await self._recipient.recv(ATOM_LENGTH)
+        if resp != READY_FOR_TRANSFERRING:
+            return
         assert content_type in TRANSFERS_TYPES
         metadata = JSON_METADATA_OBSERVERS.copy()
         metadata[CONTENT_SIZE] = len(data)
         metadata[CONTENT_TYPE] = content_type
-        metadata[SIGNATURE_OF_SERVER] = sign_message(data)
-        metadata[CHAT_NAME] = await source.get_name()
+        metadata[SIGNATURE_OF_SERVER] = sign_message(data).hex()
+        metadata[CHAT_NAME] = source.get_name()
 
-        await self._recipient.sendall(json.dumps(metadata))
-        resp = await self._recipient.recv(1024)
+        logger.info(f'[-->] Sending {metadata} to the aux socket of {self.user}...')
+        await self._recipient.sendall(bytes(json.dumps(metadata), encoding='utf-8'))
+        logger.info(f'[<--] Fetching {READY_FOR_TRANSFERRING} from aux {self.user}...')
+        resp = await self._recipient.recv(ATOM_LENGTH)
         if resp == READY_FOR_TRANSFERRING:
             await self._recipient.sendall(data)
 
@@ -124,7 +130,7 @@ class ChatAssistant(metaclass=DebugMetaclass):
     __instances = {}
 
     # FIXME I DON'T KNOW WHETHER IT WORKS
-    def __new__(cls, db_client: StorageClientInterface, chat: Chat):
+    def __new__(cls, db_client: StorageClientInterface, chat: Chat, just_created=False):
         if chat.name not in ChatAssistant.__instances:
             ChatAssistant.__instances[chat.name] = \
                 super(ChatAssistant, cls).__new__(cls)
@@ -134,7 +140,7 @@ class ChatAssistant(metaclass=DebugMetaclass):
     def get_already_working(cls, chat_name: str):
         return ChatAssistant.__instances.get(chat_name, None)
 
-    def __init__(self, db_client: StorageClientInterface, chat: Chat):
+    def __init__(self, db_client: StorageClientInterface, chat: Chat, just_created=False):
         """ Initialization, but not launching of chatAssistant
 
         :param db_client: started or not client of database.
@@ -145,6 +151,7 @@ class ChatAssistant(metaclass=DebugMetaclass):
         self._chat = chat
         self._messages = []            # type: List[Message]
         self._members = set()          # type: Set[User]
+        self._just_created = just_created
 
     def get_name(self):
         return self._chat.name
@@ -157,8 +164,11 @@ class ChatAssistant(metaclass=DebugMetaclass):
         this chat, ot if the chat has just been created.
         """
         await self._db_client.start()
-        self._messages = await self._db_client.get_messages(self._chat)
-        self._members = await self._db_client.get_members(self._chat)
+        if not self._just_created:
+            self._messages = await self._db_client.get_messages(self._chat)
+            self._members = await self._db_client.get_members(self._chat)
+        else:
+            self._members = {self._chat.creator.name}
 
     async def end(self):
         """ End session. Calls if there are no active members.
@@ -205,7 +215,6 @@ class ChatAssistant(metaclass=DebugMetaclass):
             del self._observers[user.name]
         if len(self._observers) == 0:
             await self.end()
-        del self
 
     async def notify_new_message(self, message: Message):
         """ Inform all of the users that the new message was added.
@@ -258,7 +267,7 @@ async def create_chat(chat_name: str, creator: User,
     await new_db_client.create_chat(creator, chat_name, members)
 
     chat = Chat(chat_name, creator, datetime.datetime.now())
-    new_chat_assistant = ChatAssistant(new_db_client, chat)
+    new_chat_assistant = ChatAssistant(new_db_client, chat, just_created=True)
     await new_chat_assistant.start()
     await new_chat_assistant.attach_user_observer(UserObserver(creator, creator_socket))
     return new_chat_assistant

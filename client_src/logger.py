@@ -13,7 +13,7 @@ from .constants import *
 
 # Create a custom logger
 logger = logging.getLogger("main")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Create handlers
 i_handler = logging.FileHandler(LOG_CLIENT_FILE)

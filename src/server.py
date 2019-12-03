@@ -114,8 +114,8 @@ class UserAssistant(metaclass=DebugMetaclass):
                 if command not in COMMANDS and command:
                     await self._client_main.sendall(b"Wrong command.")
                 elif not command:
-                    await curio.sleep(1)
-                    continue
+                    logger.info(f"[*] {self._main_addr} connection refused...")
+                    raise socket.error()
                 else:
                     await COMMANDS[command](self)
             except socket.error:
@@ -176,9 +176,9 @@ class UserAssistant(metaclass=DebugMetaclass):
             return
 
         # raises Exception if not successful
-        await self._get_out_socket()
         self._logged_in = True
         self._logged_user = User(name)
+        await self._get_out_socket()
         logger.info(f"[*] Client {self._main_addr} logged as {name}.")
 
         await self.send_all_chats()
@@ -195,6 +195,7 @@ class UserAssistant(metaclass=DebugMetaclass):
                 await curio.timeout_after(TIMEOUT, get_required_connection,
                                              check_phrase)
             self._user_observer = UserObserver(self._logged_user, self._client_out)
+            await self._client_out.sendall(READY_FOR_TRANSFERRING)
         else:
             raise UnknownAnswerError(resp)
 
@@ -286,9 +287,9 @@ class UserAssistant(metaclass=DebugMetaclass):
 
         await self._db_client.new_user(name, hash_password(password))
         # raises Exception if not successful
-        await self._get_out_socket()
         self._logged_in = True
         self._logged_user = User(name)
+        await self._get_out_socket()
         logger.info(f"[*] Client {self._main_addr} logged as {name}.")
 
     # TODO implement
@@ -349,8 +350,10 @@ class UserAssistant(metaclass=DebugMetaclass):
         # TODO add client_out_addr to ChatAssistant
         try:
             # after this all the messages and members will be sent to _client_out
-            await create_chat(name, self._logged_user, list_members, self._client_out)
-        except BadStorageParamException:
+            chat_assistant = await create_chat(name, self._logged_user, list_members, self._client_out)
+            self._current_chat = chat_assistant
+        except BadStorageParamException as e:
+            logger.exception(e)
             await self._client_main.sendall(WRONG_NAME)
 
     async def _check_logged(self):
@@ -365,17 +368,19 @@ class UserAssistant(metaclass=DebugMetaclass):
 
         logger.info(f"[<--] Fetching json from {self._main_addr}...")
         resp = await self._client_main.recv(ATOM_LENGTH)
-        data = self._convert_json(JSON_OUT_METADATA, resp)
+        data = self._convert_json(JSON_OPEN_CHAT_FORMAT, resp)
         if not data:
             await self._client_main.sendall(BAD_JSON_FORMAT)
-
+            return
+        await self._client_main.sendall(READY_FOR_TRANSFERRING)
+        logger.info(f'[*] Got {data}.')
         name = data[NAME]
         chat_type = data[CONTENT_TYPE]
         if chat_type == CHAT:
             chat_assistant = await get_chat_assistant(name)
 
-            members = chat_assistant.get_members()
-            if self._logged_user in members:
+            members = await chat_assistant.get_members()
+            if self._logged_user.name in members:
                 await chat_assistant.attach_user_observer(self._user_observer)
             else:
                 await chat_assistant.add_user(self._user_observer)
@@ -386,6 +391,7 @@ class UserAssistant(metaclass=DebugMetaclass):
     async def message(self):
         if self._current_chat is None:
             await self._client_main.sendall(b"You didn't enter the chat.")
+            return
         await self._server_signification()
 
         logger.info(f"[<--] Fetching json from {self._main_addr}...")
@@ -398,17 +404,18 @@ class UserAssistant(metaclass=DebugMetaclass):
         if content_type == TEXT:
             await self._client_main.sendall(READY_FOR_TRANSFERRING)
             text = b''
-            done = 0
-            for done in range(0, size, CHUNK):
+            for _ in range(0, size, CHUNK):
                 text += await self._client_main.recv(CHUNK)
+            done = len(text)
             if size - done:
                 text += await self._client_main.recv(size - done)
             text = str(text, encoding='utf-8')
-            message = Message(self._logged_user.name, '', 0, content_type, text)
+            message = Message(self._logged_user.name, str(datetime.datetime.now()), 0, content_type, text)
             try:
                 await self._current_chat.new_message(message)
             except YouRBannedWroteError:
                 await self._client_main.sendall(b"You are banned in this chat.")
+            await self._client_main.sendall(READY_FOR_TRANSFERRING)
         else:
             raise NotImplementedError()
 
@@ -416,8 +423,13 @@ class UserAssistant(metaclass=DebugMetaclass):
         pass
 
     async def exit_from_chat(self):
-        pass
-
+        await self._check_logged()
+        if self._current_chat is None:
+            await self._client_main.sendall(b"You didn't enter the chat.")
+            return
+        await self._current_chat.detach_user_assistant(self._logged_user)
+        await self._client_main.sendall(READY_FOR_TRANSFERRING)
+        await self.send_all_chats()
 
 COMMANDS = {
     REGISTRATION:   UserAssistant.registration,

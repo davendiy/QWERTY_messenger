@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS ChatMessages (
 
 -- Trigger that adds new record to the UsersChats if 
 -- new chat creates  
-CREATE TRIGGER IF NOT EXISTS ChatCreatorUpdater INSERT ON Chats
+CREATE TRIGGER IF NOT EXISTS ChatCreatorUpdater AFTER INSERT ON Chats
     BEGIN 
         INSERT INTO UsersChats (UID, CID, Permission) VALUES 
             (new.CreatorID, new.Id, {CREATOR});
@@ -218,7 +218,7 @@ CREATE TRIGGER IF NOT EXISTS ChatCreatorUpdater INSERT ON Chats
 
 -- Trigger that adds new record to the UsersChannels if 
 -- new channel creates  
-CREATE TRIGGER IF NOT EXISTS ChannelCreatorUpdater INSERT ON Channels
+CREATE TRIGGER IF NOT EXISTS ChannelCreatorUpdater AFTER INSERT ON Channels
     BEGIN 
         INSERT INTO UsersChannels (UID, CID, Permission) VALUES 
             (new.CreatorID, new.Id, {CREATOR});
@@ -295,7 +295,7 @@ class AsyncWorker(metaclass=DebugMetaclass):
                 self._conn.close()
                 break
             except Exception as e:
-                logger.error(e)
+                logger.exception(e)
                 self._conn.rollback()
 
     def get_queue(self):
@@ -364,7 +364,7 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
         """
         logger.info(f"[*] Storage client for {self._filename} closed.")
         if self._conn is not None:
-            await self._worker_task.cancel()
+            # await self._worker_task.cancel()
             self._conn.close()
             self._conn = None
             self._curs = None
@@ -487,7 +487,7 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
         """
         logger.info(f"[*] Saving adding of {user} to {chatOrChannel} to the database...")
         c_name = chatOrChannel.name
-        user_name = User.name
+        user_name = user.name
         assert destination in POSSIBLE_PERMISSIONS, \
             f"Bad destination {destination}"
         assert permission in POSSIBLE_PERMISSIONS[destination], \
@@ -700,7 +700,7 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
 
     # FIXME check if works
     @_check_connected
-    async def get_members(self, chat: Chat) -> Set[ChatUser]:
+    async def get_members(self, chat: Chat) -> Set[str]:
         """ Get all the members of the given chat (their names).
 
         :return: list of tuples
@@ -718,7 +718,7 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
                    WHERE UsersChats.CID=?'''
 
         await self._do_read_query(query, (chat_id, ))
-        return {ChatUser(*el) for el in self._curs.fetchall()}
+        return {el[0] for el in self._curs.fetchall()}
 
     # TODO implement
     @_check_connected
@@ -765,7 +765,7 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
     @_check_connected
     async def add_message(self, chat: Chat, message: Message):
         message_type = message.content_type
-        chat_name = Chat.name
+        chat_name = chat.name
         author_name = message.author
         content = message.content
         assert message_type in MESSAGE_TYPES, f'Bad message_type: {message_type}'
@@ -776,7 +776,7 @@ class SqliteStorageClient(StorageClientInterface, metaclass=DebugMetaclassForAbs
         if not u_id:
             raise BadStorageParamException(f"There is no user with name {author_name}.")
 
-        if self.is_banned(c_id, u_id, use_id=True):
+        if not (await self.is_banned(c_id, u_id, use_id=True)):
             raise YouRBannedWroteError(f"The user {author_name} is banned in {chat_name}.")
 
         query = '''INSERT INTO ChatMessages (CID, 

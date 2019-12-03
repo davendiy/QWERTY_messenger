@@ -28,6 +28,22 @@ RSA_PUBLIC_KEY_PATH = './public_key.rsa'
 LOG_CLIENT_FILE = "./logs/client.log"
 CRITICAL_LOG_CLIENT_FILE = "./logs/client.log"
 
+MEMBER = 1
+ADMIN = 2
+CREATOR = 0
+MODERATOR = 3
+
+CHAT = 1
+CHANNEL = 2
+
+BANNED = 1
+NORM = 0
+
+POSSIBLE_PERMISSIONS = {
+    CHAT: {MEMBER, ADMIN},
+    CHANNEL: {MODERATOR, MEMBER}
+}
+
 CHAT_NAME = 'ChatName'
 CONTENT_TYPE = 'ContentType'
 CONTENT_SIZE = 'ContentSize'

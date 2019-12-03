@@ -117,7 +117,7 @@ class StorageClientInterface(ABC):
         pass
 
     @abstractmethod
-    async def get_members(self, chat: Chat) -> Set[ChatUser]:
+    async def get_members(self, chat: Chat) -> Set[str]:
         pass
 
     # ========================== channels ======================================
