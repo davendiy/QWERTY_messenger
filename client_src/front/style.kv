@@ -1,0 +1,221 @@
+<SignInScreen>:
+
+    input_login_in: input_login
+    input_password_in: input_password
+
+    AnchorLayout:
+
+        BoxLayout:
+            size_hint: (.7, .8)
+            orientation: "vertical"
+            spacing: 50
+            padding: 40
+
+            Label:
+                text: "Sign in"
+
+                font_size: 50
+
+            GridLayout:
+                size_hint_y: .8
+                cols: 2
+                spacing: 50
+
+                Label:
+                    size_hint_x: 0.4
+                    text: "Login"
+                    font_size: 40
+
+                TextInput:
+                    id: input_login
+                    multiline: False
+
+
+                Label:
+                    size_hint_x: 0.4
+                    text: "Password"
+
+                    font_size: 40
+
+
+                TextInput:
+                    id: input_password
+                    password: True
+                    password_mask: "*"
+                    multiline: False
+
+
+            BoxLayout:
+                size_hint_y: .4
+
+                orientation: "horizontal"
+                spacing: 50
+
+                Button:
+                    font_size: 40
+                    text: "Login"
+                    on_release: root.login()
+
+                Button:
+                    font_size: 40
+                    text: 'Sign Up'
+                    on_release: root.manager.current = "sign_up_screen"
+
+
+
+
+<SignUpScreen>:
+
+    input_login_up: input_login
+    input_password_up: input_password
+    input_confirm_up: input_confirm
+
+    AnchorLayout:
+
+        BoxLayout:
+            size_hint: (.7, .9)
+            orientation: "vertical"
+            spacing: 50
+            padding: 40
+
+            Label:
+                text: "Sign Up"
+                size_hint_y: .1
+                font_size: 50
+
+            GridLayout:
+                cols: 2
+                spacing: 50
+
+                Label:
+                    size_hint_x: 0.65
+                    text: "Login"
+                    font_size: 40
+
+                TextInput:
+                    id: input_login
+                    multiline: False
+
+                Label:
+                    size_hint_x: 0.4
+                    text: "Password"
+                    font_size: 40
+
+
+                TextInput:
+                    id: input_password
+                    multiline: False
+                    password: True
+                    password_mask: "*"
+
+                Label:
+                    size_hint_x: 0.4
+                    text: "Confirm"
+                    font_size: 40
+
+
+                TextInput:
+                    id: input_confirm
+                    multiline: False
+                    password: True
+                    password_mask: "*"
+
+
+            BoxLayout:
+                size_hint_y: .25
+
+                orientation: "horizontal"
+                spacing: 50
+
+                Button:
+                    text: "Register"
+                    on_release: root.register()
+
+                Button:
+                    text: 'Already has an account'
+                    on_release: root.manager.current = "sign_in_screen"
+
+
+
+
+
+<DialogScreen>:
+
+    chat_list_ds: chat_list
+
+    AnchorLayout:
+
+
+        BoxLayout:
+            orientation: "horizontal"
+            padding: 10
+            spacing: 10
+
+            BoxLayout:
+                size_hint_x: .4
+                orientation: "vertical"
+                padding: 10
+                spacing: 10
+
+                Label:
+                    text: "Chats"
+                    size_hint_y: .1
+
+
+                
+
+                RV:
+                    id: chat_list
+                    viewclass: 'Button'
+                    RecycleBoxLayout:
+                        default_size: None, dp(56)
+                        default_size_hint: 1, None
+                        size_hint_y: None
+                        height: self.minimum_height
+                        orientation: 'vertical'
+
+
+                BoxLayout:
+                    padding: 10
+                    spacing: 10
+                    size_hint_y: .08
+                    orientation: "horizontal"
+
+                    Button:
+                        text: "escape"
+                        on_release: root.manager.current = "sign_in_screen"
+
+                    Button:
+                        text: "new chat"
+
+                    Button:
+                        text: "refresh"
+
+
+
+
+
+            BoxLayout:
+                padding: 10
+                spacing: 10
+                orientation: "vertical"
+
+
+                Widget:
+                    size_hint_y: .95
+
+                BoxLayout:
+                    size_hint_y: .05
+                    spacing: 10
+
+                    orientation: "horizontal"
+
+                    TextInput:
+                        size_hint_x: .8
+
+                    Button:
+                        size_hint_x: .2
+                        text: "send"
+
+
+
